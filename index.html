@@ -252,6 +252,22 @@ dialog.login .row { display: flex; gap: 8px; justify-content: flex-end; margin-t
       <button type="button" class="btn ghost" id="shareBtn" hidden>LINEなどで送る</button>
       <span class="note" id="pdfNote"></span>
     </div>
+    <div class="pdfbar">
+      <b>LINEに送る</b>
+      <button type="button" class="btn ghost" id="lineBtn">LINE文をつくる</button>
+      <button type="button" class="btn ghost" id="imgBtn">画像をつくる</button>
+      <button type="button" class="btn ghost" id="imgShareBtn" hidden>画像をLINEなどで送る</button>
+      <span class="note" id="lineNote"></span>
+    </div>
+    <dialog class="login" id="lineDlg" style="width:min(94vw,560px)">
+      <form method="dialog" id="lineForm">
+        <h2>LINE文</h2>
+        <p class="note">そのまま送れます。「ひとこと」は書きかえてもOKです。</p>
+        <textarea id="lineText" rows="14" style="font:inherit;font-size:15px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;color:var(--ink);background:#fff;resize:vertical"></textarea>
+        <p class="okmsg" id="lineMsg"></p>
+        <div class="row"><button type="button" class="btn ghost" id="lineClose">閉じる</button><button type="button" class="btn ghost" id="lineShare" hidden>LINEなどで送る</button><button type="button" class="btn" id="lineCopy">コピー</button></div>
+      </form>
+    </dialog>
   </section>
 
   <div class="tabs" id="tabs" role="group" aria-label="表示する店舗"></div>
@@ -826,6 +842,65 @@ function buildReport(rec) {
   return [repPage1(D, PD && PD.blk ? PD : null, ND), ...D.lc.map((c, i) => repStore(c, D, PD && PD.blk ? PD : null, ND, i + 2))];
 }
 
+/* ---------- LINE文・LINE用の画像 ---------- */
+function lineText(rec) {
+  const D = repData(rec); if (!D || !D.blk) return null;
+  const {S, lc, blk} = D, M = +rec.ym.slice(4), full = D.ld >= rec.days.length;
+  const nr = db.history[ymShift(rec.ym, 1)], NM = nr && nr.days ? +nr.ym.slice(4) : null;
+  const L = [`【井村ブロック ${M}月 人時売上予算比${full ? '' : `（${D.ld}日まで）`}】`, `ブロック（指標対象${lc.length}店）：${pct(blk.ratio)}（適正より${sg(blk.hd)}h）`, ''];
+  lc.forEach((c) => L.push(`${S[c].name}　${pct(S[c].a.ratio)}（${sg(S[c].a.hd)}h）`));
+  D.codes.filter((c) => !S[c].lad && S[c].a.srate != null).forEach((c) => L.push(`※${S[c].name}は指標対象外（売上予算比 ${pct(S[c].a.srate)}）`));
+  const weLow = lc.filter((c) => { const we = agg(S[c].rows.filter((r) => isWE(r.dow)), true), wd = agg(S[c].rows.filter((r) => !isWE(r.dow)), true); return we.ratio != null && wd.ratio != null && we.ratio < wd.ratio; });
+  let hito = weLow.length === lc.length ? `${lc.length}店舗とも土日の人時予算比が平日より低い結果でした。` : weLow.length ? `${weLow.map((c) => S[c].name).join('・')}は土日の人時予算比が平日より低い結果でした。` : '全店、土日も平日並みに回せています。';
+  if (NM) hito += `${NM}月のシフト目安（日別の適正時間）を各店ページに載せています。`;
+  if (weLow.length) hito += '土日の配置を中心に確認をお願いします。';
+  L.push('', hito);
+  return L.join('\n');
+}
+function openLine() {
+  const t = lineText(state);
+  if (!t) { $('#lineNote').textContent = `${ymLabel(state.ym)}の日報がまだないため、作れません`; return; }
+  $('#lineNote').textContent = ''; $('#lineMsg').textContent = ''; $('#lineText').value = t;
+  $('#lineShare').hidden = !navigator.share; $('#lineDlg').showModal();
+}
+async function copyLine() {
+  const t = $('#lineText').value;
+  try { await navigator.clipboard.writeText(t); }
+  catch (e) { const ta = $('#lineText'); ta.select(); try { document.execCommand('copy'); } catch (e2) {} }
+  $('#lineMsg').textContent = 'コピーしました。LINEに貼り付けてください';
+}
+let lastImgs = null;
+async function makeImages() {
+  const btn = $('#imgBtn'); $('#imgShareBtn').hidden = true; $('#lineNote').textContent = '';
+  const rp = buildReport(state);
+  if (!rp) { $('#lineNote').textContent = `${ymLabel(state.ym)}の日報がまだないため、作れません`; return; }
+  btn.disabled = true; btn.textContent = '作成中…';
+  const host = document.createElement('div'); host.className = 'rep-host'; host.innerHTML = rp.join(''); document.body.append(host);
+  try {
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const els = host.querySelectorAll('.rp'), ym = ymLabel(state.ym).replace(/\s/g, ''), files = [];
+    for (let i = 0; i < els.length; i++) {
+      const cv = await html2canvas(els[i], {scale: 2, backgroundColor: '#ffffff', useCORS: true});
+      const blob = await new Promise((ok) => cv.toBlob(ok, 'image/png'));
+      const nm = i ? `${ym}_${i + 1}_${els[i].querySelector('h1').textContent}.png` : `${ym}_1_ブロックまとめ.png`;
+      files.push(new File([blob], nm, {type: 'image/png'}));
+    }
+    lastImgs = files;
+    if (navigator.canShare && navigator.canShare({files})) { $('#imgShareBtn').hidden = false; $('#lineNote').textContent = `${files.length}枚の画像ができました。「画像をLINEなどで送る」を押してください`; }
+    else {
+      for (const f of files) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.append(a); a.click(); await new Promise((r) => setTimeout(r, 400)); URL.revokeObjectURL(a.href); a.remove(); }
+      $('#lineNote').textContent = `${files.length}枚の画像を保存しました（ダウンロードのフォルダ）`;
+    }
+  } catch (e) { $('#lineNote').textContent = '画像を作れませんでした：' + (e.message || e); }
+  host.remove(); btn.disabled = false; btn.textContent = '画像をつくる';
+}
+function renderLineBar() {
+  const ok = !!lineText(state), cv = typeof html2canvas !== 'undefined';
+  $('#lineBtn').disabled = !ok; $('#imgBtn').disabled = !ok || !cv || inFrame;
+  if (!ok) $('#lineNote').textContent = state.days ? `${ymLabel(state.ym)}は日報がないため作れません。表示する月を切り替えてください` : '';
+  else if ($('#lineNote').textContent.includes('作れません')) $('#lineNote').textContent = '';
+}
+
 /* ---------- 推移 ---------- */
 const SCOL = {213: '#1e3a6e', 214: '#d9822b', 223: '#0f8b8d', 224: '#2b6be0', 807: '#8e44ad', 405: '#7a8597'};
 function fyOf(ym) { const y = +ym.slice(0, 4), m = +ym.slice(4); return m >= db.fyStart ? y : y - 1; }
@@ -915,14 +990,14 @@ function renderTrend(pdf) {
 function render() {
   renderStatus(); renderTabs();
   if (tab !== 'all' && tab !== 'trend' && !(state.stores && state.stores[tab])) tab = 'all';
-  if (tab !== 'trend' && !state.days) { $('#view').innerHTML = `<div class="panel empty">${ymLabel(state.ym)}の本社Excelがまだありません。Excelを読み込むと表示されます。</div>`; renderPdfBar(); return; }
+  if (tab !== 'trend' && !state.days) { $('#view').innerHTML = `<div class="panel empty">${ymLabel(state.ym)}の本社Excelがまだありません。Excelを読み込むと表示されます。</div>`; renderPdfBar(); renderLineBar(); return; }
   $('#view').innerHTML = tab === 'all' ? renderAll() : tab === 'trend' ? renderTrend(false) : renderStore(tab);
   if (tab === 'trend') {
     const el = $('#trendChart'); if (el) { const fy = trendFy, ms = fyMonths(fy); const lc = BLOCK.filter((c) => ms.some((ym) => db.history[ym] && db.history[ym].stores && db.history[ym].stores[c] && db.history[ym].stores[c].ladder)); el.innerHTML = trendChart(fy, lc, Math.max(320, el.clientWidth), false); }
     const fs = $('#fySel'); if (fs) fs.onchange = () => { trendFy = +fs.value; render(); };
   }
   if (tab !== 'all' && tab !== 'trend') drawChart(tab);
-  renderPdfBar();
+  renderPdfBar(); renderLineBar();
 }
 
 /* ---------- 同期（Firebase）：users/{uid}/jinji/history/{ym} に月ごとのJSON文字列、settings に設定 ---------- */
@@ -1041,6 +1116,12 @@ $('#fyStart').addEventListener('change', (ev) => { db.fyStart = +ev.target.value
 $('#backupBtn').addEventListener('click', backup);
 $('#cap').checked = capOn();
 $('#pdfBtn').addEventListener('click', makePdf);
+$('#lineBtn').addEventListener('click', openLine);
+$('#lineCopy').addEventListener('click', copyLine);
+$('#lineClose').addEventListener('click', () => $('#lineDlg').close());
+$('#lineShare').addEventListener('click', async () => { try { await navigator.share({text: $('#lineText').value}); } catch (e) {} });
+$('#imgBtn').addEventListener('click', makeImages);
+$('#imgShareBtn').addEventListener('click', async () => { if (!lastImgs) return; try { await navigator.share({files: lastImgs}); } catch (e) {} });
 $('#shareBtn').addEventListener('click', async () => { if (!lastPdf) return; try { await navigator.share({files: [lastPdf], title: lastPdf.name}); } catch (e) {} });
 $('#cap').addEventListener('change', () => { try { localStorage.setItem(KEY + '-cap', $('#cap').checked ? '1' : '0'); } catch (e) {} markDirty('_settings'); pushNow(); render(); });
 let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (tab === 'trend') render(); else if (tab !== 'all') drawChart(tab); }, 150); });
