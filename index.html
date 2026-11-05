@@ -1,0 +1,883 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e3a6e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="人時予算比">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<style>*,*::before,*::after{box-sizing:border-box}body{margin:0}img{max-width:100%}[hidden]{display:none!important}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
+<title>人時売上予算比分析</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+/* Layout: 上に読み込みパネル、下に店舗タブと分析。表は横スクロール枠 */
+/* 明るい1テーマ固定：白地＋ネイビー。端末のダークモードでも明るく表示 */
+:root {
+  color-scheme: light;
+  --bg: #f3f6fb; --panel: #ffffff; --ink: #14213d; --muted: #5a6680; --line: #dbe2ee; --soft: #eef3fa;
+  --navy: #1e3a6e; --navy-2: #2b5299; --accent: #1e4fa3; --accent-soft: #e6eefb;
+  --ok: #157347; --ok-bg: #dff3e7; --warn: #946000; --warn-bg: #fdf1d6; --bad: #c0352b; --bad-bg: #fde3e0;
+  --bar: #2b6be0; --bar-mute: #c6cfdd; --ref: #14213d;
+  --f-display: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --f-body: "BIZ UDPGothic", "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+}
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.6; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 20px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 18px; }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: 1.7rem; color: #fff; margin: 0; letter-spacing: .02em; text-wrap: balance; }
+h2 { font-family: var(--f-display); font-weight: 700; font-size: 1.1rem; margin: 0; text-wrap: balance; }
+h3 { font-size: .95rem; margin: 0; }
+.sub { color: var(--muted); margin: 0; font-size: .85rem; }
+.head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 16px; background: linear-gradient(135deg, var(--navy), var(--navy-2)); color: #fff; border-radius: 14px; padding: 20px 22px; box-shadow: 0 6px 20px rgba(30,58,110,.18); }
+.head .sub { color: #d6e2f7; }
+.head .badge { background: #fff3cf; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 1px 3px rgba(20,33,61,.05); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.load { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 760px) { .load { grid-template-columns: 1fr; } }
+.drop { border: 2px dashed #b9c7de; background: #f8fbff; border-radius: 10px; padding: 22px 16px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; transition: border-color .15s, background .15s; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop strong { font-family: var(--f-display); font-size: 1.05rem; }
+.btn { font: inherit; font-weight: 700; border: 1px solid var(--accent); background: var(--accent); color: #fff; padding: 7px 16px; border-radius: 8px; cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn:focus-visible, .tab:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.status { display: flex; flex-direction: column; gap: 8px; }
+.st { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: start; padding: 10px 12px; border-radius: 8px; background: var(--soft); }
+.st .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; background: var(--bar-mute); }
+.st.ok .dot { background: var(--ok); }
+.st.ng .dot { background: var(--bad); }
+.st b { font-size: .9rem; }
+.st span { grid-column: 2; color: var(--muted); font-size: .8rem; }
+.badge { display: inline-block; font-size: .72rem; font-weight: 700; padding: 1px 8px; border-radius: 99px; background: var(--warn-bg); color: var(--warn); vertical-align: 2px; margin-left: 6px; }
+.opt { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--muted); }
+.msg { font-size: .85rem; color: var(--bad); margin: 0; }
+.msg:empty { display: none; }
+.formula { font-size: .82rem; color: var(--muted); background: var(--soft); border-radius: 8px; padding: 10px 12px; line-height: 1.8; }
+.formula code { font-family: var(--f-body); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: var(--ink); white-space: normal; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 8px; margin-block: -8px; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.tab { font: inherit; padding: 6px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+.tab:hover { border-color: var(--muted); }
+.tab[aria-pressed="true"] { background: var(--navy); color: #fff; border-color: var(--navy); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; }
+@media (max-width: 760px) { .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: calc(-1 * max(16px, env(safe-area-inset-left, 0px))); padding-inline: max(16px, env(safe-area-inset-left, 0px)); } .tabs::-webkit-scrollbar { display: none; } .tab { flex: none; } .tblbox.v { max-height: 62vh; } }
+@media (max-width: 520px) { .tiles { grid-template-columns: 1fr 1fr; gap: 8px; } .tile { padding: 10px 12px; } .tile .n { font-size: 1.35rem; } }
+.tblbox { overflow: auto; border: 1px solid var(--line); border-radius: 8px; -webkit-overflow-scrolling: touch; }
+.tblbox.v { max-height: min(75vh, 720px); }
+.tblbox td { background: var(--panel); }
+.tblbox tr.wk td { background: var(--soft); }
+.tblbox thead th { position: sticky; top: 0; z-index: 2; background: #f6f8fc; }
+.tblbox thead tr:nth-child(2) th { top: var(--h1row, 0px); }
+.tblbox.two thead tr:first-child th { position: static; }
+.tblbox th:first-child, .tblbox td:first-child { position: sticky; left: 0; z-index: 1; box-shadow: 1px 0 0 var(--line); }
+.tblbox thead th:first-child { z-index: 3; }
+details.formula summary { cursor: pointer; font-weight: 700; color: var(--ink); }
+details.formula[open] summary { margin-bottom: 4px; }
+.pdfbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.pdfbar select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+.btn:disabled { opacity: .5; cursor: default; }
+.monthsel { display: flex; align-items: center; gap: 8px; }
+.monthsel select, .datarow select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.5); background: #fff; color: var(--ink); font-weight: 700; }
+.okmsg { font-size: .85rem; color: var(--ok); margin: 0; }
+.okmsg:empty { display: none; }
+.dlist { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.drow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.drow b { min-width: 7em; }
+.drow .sp { flex: 1; }
+.btn.sm { padding: 3px 10px; font-size: .8rem; }
+.btn.danger { border-color: var(--bad); color: var(--bad); background: transparent; }
+.btn.danger.arm { background: var(--bad); color: #fff; }
+.datarow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.datarow select { border-color: var(--line); font-weight: 400; }
+.tab.trend { border-color: var(--navy-2); color: var(--navy-2); font-weight: 700; }
+.tab.trend[aria-pressed="true"] { color: #fff; }
+.trendbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.trendbar select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+.part { font-size: .7rem; color: var(--warn); display: block; }
+.rep-host { position: fixed; left: -12000px; top: 0; width: 794px; }
+.rep { width: 794px; padding: 34px 38px; background: #fff; color: #14213d; font-size: 12px; display: flex; flex-direction: column; gap: 12px; }
+.rep .panel { box-shadow: none; padding: 10px 12px; gap: 6px; }
+.rep .panel[style] { margin-top: 0 !important; }
+.rep .tblbox { max-height: none; overflow: visible; border: 0; }
+.rep .tblbox th, .rep .tblbox td { position: static; box-shadow: none; }
+.rep td, .rep th { padding: 3px 6px; font-size: 11px; }
+.rep .tile { padding: 8px 12px; } .rep .tile .n { font-size: 1.4rem; }
+.rep .tiles { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.rep-h { display: flex; justify-content: space-between; align-items: end; border-bottom: 3px solid var(--navy); padding-bottom: 6px; }
+.rep-h h1 { color: var(--ink); font-size: 1.45rem; }
+.rep-h .sub { color: var(--muted); }
+.tile { background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--navy-2); border-radius: 12px; box-shadow: 0 1px 3px rgba(20,33,61,.05); padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
+.tile .l { font-size: .78rem; color: var(--muted); }
+.tile .n { font-family: var(--f-display); font-weight: 700; font-size: 1.75rem; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.tile .n small { font-size: .8rem; color: var(--muted); font-weight: 500; margin-left: 3px; }
+.tile .s { font-size: .78rem; color: var(--muted); }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { font-size: .75rem; color: var(--muted); font-weight: 700; text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: bottom; }
+td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th.g { text-align: center; border-bottom: 0; padding-bottom: 0; }
+tr.wk td { background: var(--soft); font-weight: 700; }
+tr.tot td { font-weight: 700; border-top: 2px solid var(--ink); }
+tr.fut td { color: var(--muted); }
+tr.we td:first-child { font-weight: 700; }
+td.na { color: var(--muted); font-size: .78rem; }
+.pill { display: inline-block; padding: 0 8px; border-radius: 99px; font-weight: 700; font-size: .8rem; }
+.ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+.pill.ok { background: var(--ok-bg); } .pill.bad { background: var(--bad-bg); } .pill.warn { background: var(--warn-bg); }
+td.heat { text-align: center; }
+td.heat.ok { background: var(--ok-bg); color: var(--ink); } td.heat.warn { background: var(--warn-bg); color: var(--ink); } td.heat.bad { background: var(--bad-bg); color: var(--ink); }
+td.heat small { display: block; font-size: .72rem; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .78rem; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.legend i.line { width: 14px; height: 0; border-top: 2px solid var(--ref); border-radius: 0; vertical-align: 3px; }
+.chart { position: relative; min-height: 240px; }
+.chart svg text { font-family: var(--f-body); font-size: 11px; fill: var(--muted); }
+.chart svg text.we { fill: var(--ink); font-weight: 700; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.12); padding: 6px 10px; font-size: .78rem; white-space: nowrap; z-index: 3; }
+.tip .h { color: var(--muted); }
+.note { font-size: .78rem; color: var(--muted); margin: 0; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); gap: 16px; }
+.empty { text-align: center; color: var(--muted); padding: 32px 8px; }
+.headr { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.acct { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 10px; font-size: .8rem; color: #d6e2f7; }
+.acct .sdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #9fb3d6; margin-right: 6px; vertical-align: 1px; }
+.acct .sdot.ok { background: #5fd38d; } .acct .sdot.wait { background: #f5c451; } .acct .sdot.err { background: #ff8a80; }
+.btn.onnavy { background: #fff; color: var(--navy); border-color: #fff; }
+.linkbtn { font: inherit; background: none; border: 0; color: #d6e2f7; text-decoration: underline; cursor: pointer; padding: 0; }
+@media (max-width: 760px) { .headr { align-items: flex-start; width: 100%; } .acct { justify-content: flex-start; } }
+dialog.login { border: 0; border-radius: 14px; padding: 0; width: min(92vw, 380px); box-shadow: 0 12px 40px rgba(20,33,61,.3); color: var(--ink); background: var(--panel); }
+dialog.login::backdrop { background: rgba(20,33,61,.45); }
+dialog.login form { display: flex; flex-direction: column; gap: 10px; padding: 20px; }
+dialog.login label { font-size: .82rem; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+dialog.login input { font: inherit; font-size: 16px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: #fff; }
+dialog.login .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+@media (prefers-reduced-motion: no-preference) { .drop, .tab { transition: all .15s; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="head">
+    <div>
+      <h1>人時売上予算比分析</h1>
+      <p class="sub">本社の月次Excelと日報CSVから、日ごとの人時売上予算と適正時間を出します</p>
+    </div>
+    <div class="headr">
+      <div class="acct" id="acct" hidden></div>
+      <div class="monthsel"><label class="sub" for="month">表示する月</label><select id="month"></select></div>
+    </div>
+  </div>
+  <dialog class="login" id="loginDlg">
+    <form id="loginForm">
+      <h2>ログイン</h2>
+      <p class="note">ログインすると、スマホとPCで同じデータが見られます。</p>
+      <label>メールアドレス<input type="email" id="lgEmail" autocomplete="username" required></label>
+      <label>パスワード<input type="password" id="lgPass" autocomplete="current-password" required minlength="6"></label>
+      <p class="msg" id="lgMsg"></p>
+      <div class="row"><button type="button" class="btn ghost" id="lgCancel">やめる</button><button type="submit" class="btn" id="lgBtn">ログイン</button></div>
+    </form>
+  </dialog>
+
+  <section class="panel">
+    <div class="load">
+      <div class="drop" id="drop">
+        <strong>ファイルをここにドロップ</strong>
+        <span class="sub">本社のExcel（.xlsx）と日報CSVを、まとめて・別々どちらでも。読み込んだ月は自動で保存されます</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+          <label class="btn" for="file">ファイルを選ぶ</label>
+        </div>
+        <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv,.txt,.json" multiple hidden>
+      </div>
+      <div class="status">
+        <div class="st" id="stHq"><i class="dot"></i><b>本社Excel</b><span></span></div>
+        <div class="st" id="stCsv"><i class="dot"></i><b>日報CSV</b><span></span></div>
+        <label class="opt"><input type="checkbox" id="cap"> 人時予算を指標表の上限（12段階目）で頭打ちにする</label>
+        <p class="okmsg" id="okmsg"></p>
+        <p class="msg" id="msg"></p>
+      </div>
+    </div>
+    <details class="formula">
+      <summary>計算方法</summary>当月指標と同じ式を、その日の売上を月ペースに換算して使います。<br>
+      <code>人時予算 ＝ MIN人時 ＋（その日の売上 × 月の日数 − MIN売上）÷ 売上差 × 人時差</code>
+      <code>適正時間 ＝ 売上 ÷ 人時予算</code>
+      <code>時間差 ＝ 実績時間 − 適正時間</code><br>
+      週・月の人時予算は「売上合計 ÷ 適正時間合計」。日報が無い日は予算売上で計算した「予定」を表示します（シフト作成の目安）。
+    </details>
+    <details class="formula" id="dataBox">
+      <summary>保存しているデータ</summary>
+      <div class="dlist" id="dataList"></div>
+      <div class="datarow">
+        <label for="fyStart">年度の始まり</label>
+        <select id="fyStart"></select>
+        <button type="button" class="btn ghost sm" id="backupBtn">バックアップを保存</button>
+        <label class="btn ghost sm" for="file">バックアップを読み込む</label>
+      </div>
+      <p class="note" style="margin-top:6px" id="dataNote">データはこの端末の中だけに保存されます。機種変更やブラウザのデータ削除に備えて、ときどき「バックアップを保存」してください。バックアップのファイルをこの画面にドロップすると元に戻せます。</p>
+    </details>
+    <div class="pdfbar">
+      <b>店長に送るPDF</b>
+      <select id="pdfTarget" aria-label="PDFにする範囲"></select>
+      <button type="button" class="btn" id="pdfBtn">PDFを作成</button>
+      <button type="button" class="btn ghost" id="shareBtn" hidden>LINEなどで送る</button>
+      <span class="note" id="pdfNote"></span>
+    </div>
+  </section>
+
+  <div class="tabs" id="tabs" role="group" aria-label="表示する店舗"></div>
+  <div id="view"></div>
+</div>
+
+<script src="./xlsx.full.min.js"></script>
+<script src="./html2canvas.min.js"></script>
+<script src="./jspdf.umd.min.js"></script>
+<script src="./firebase-app-compat.js"></script>
+<script src="./firebase-auth-compat.js"></script>
+<script src="./firebase-database-compat.js"></script>
+<script>
+const SAMPLE = null;
+const BLOCK = [213, 214, 223, 224, 807, 405];
+const KEY = 'jinji-navi-v2';
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+
+function thisYm() { const d = new Date(); return '' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0'); }
+function blank(ym) { return {ym, days: null, stores: {}, act: {}}; }
+function seed() {
+  if (!SAMPLE) { const ym = thisYm(); return {history: {[ym]: blank(ym)}, cur: ym, fyStart: 4}; }
+  const s = JSON.parse(JSON.stringify(SAMPLE));
+  const db0 = {history: {'202610': {ym: '202610', days: s.days, stores: s.stores, act: s.act, hqName: '2026年10月 数値管理Excel', csvName: '2026年10月 日報'}}, cur: '202610', fyStart: 4};
+  try { // 旧版のデータを引き継ぐ
+    const o = JSON.parse(localStorage.getItem('jinji-navi-v1') || 'null');
+    const ym = o && (o.ym || o.ymHq);
+    if (o && o.days && !o.sampleHq && ym) { db0.history[ym] = {ym, days: o.days, stores: trimStores(o.stores), act: trimAct(o.act || {}), hqName: o.hqName, csvName: o.csvName}; db0.cur = ym; }
+  } catch (e) {}
+  return db0;
+}
+function loadDb() { try { const v = localStorage.getItem(KEY); if (v) { const d = JSON.parse(v); if (d && d.history) return d; } } catch (e) {} return seed(); }
+function save() { pushNow(); return saveLocal(); }
+function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(db)); return true; } catch (e) { $('#msg').textContent = '端末の保存容量がいっぱいで保存できませんでした。'; return false; } }
+function capOn() { try { return localStorage.getItem(KEY + '-cap') === '1'; } catch (e) { return false; } }
+function trimStores(st) { const o = {}; BLOCK.forEach((c) => { if (st && st[c]) o[c] = st[c]; }); return o; }
+function trimAct(a) { const o = {}; BLOCK.forEach((c) => { if (a && a[c]) o[c] = a[c]; }); return o; }
+function months() { return Object.keys(db.history).sort(); }
+
+let db = loadDb();
+if (!db.fyStart) db.fyStart = 4;
+let state = db.history[db.cur] || db.history[months().slice(-1)[0]] || blank(thisYm());
+let tab = 'all';
+let trendFy = null;
+
+const $ = (s) => document.querySelector(s);
+const f0 = (v) => Math.round(v).toLocaleString('ja-JP');
+const f1 = (v) => v.toLocaleString('ja-JP', {minimumFractionDigits: 1, maximumFractionDigits: 1});
+const pct = (r) => (r * 100).toFixed(1) + '%';
+const sg = (v) => (v > 0.05 ? '+' : v < -0.05 ? '−' : '±') + f1(Math.abs(v));
+const tone = (r) => r >= 1 ? 'ok' : r >= 0.95 ? 'warn' : 'bad';
+const isWE = (dow) => dow === '土' || dow === '日';
+const shortName = (n) => /LIGHT/.test(n) ? '風月LIGHT' : n.replace(/^鶴橋風月\s*/, '');
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+
+/* ---------- 計算 ---------- */
+function target(lad, salesK, N, cap) {
+  const [ms, mh, sd, hd] = lad;
+  let t = mh + (salesK * N - ms) / sd * hd;
+  if (cap) t = Math.min(t, mh + 11 * hd);
+  return t;
+}
+function storeRows(code, rec) {
+  rec = rec || state;
+  const st = rec.stores && rec.stores[code]; if (!st || !rec.days) return [];
+  const N = rec.days.length, cap = $('#cap').checked;
+  const act = (rec.act && rec.act[code]) || {};
+  return rec.days.map(([d, dow]) => {
+    const b = st.budget[d] || 0; const a = act[d];
+    const has = a && a[1] > 0;
+    const r = {day: d, dow, week: Math.floor((d - 1) / 7) + 1, budget: b, has};
+    if (has) { r.sales = a[0]; r.hours = a[1]; r.mh = a[0] * 1000 / a[1]; }
+    if (st.ladder) {
+      if (has) { r.tgt = target(st.ladder, a[0], N, cap); r.prop = a[0] * 1000 / r.tgt; r.ratio = r.mh / r.tgt; r.hdiff = r.hours - r.prop; }
+      else if (b > 0) { r.ptgt = target(st.ladder, b, N, cap); r.pprop = b * 1000 / r.ptgt; }
+    }
+    return r;
+  });
+}
+function agg(rows, lad) {
+  const g = rows.filter((r) => r.has);
+  const S = g.reduce((t, r) => t + r.sales, 0), H = g.reduce((t, r) => t + r.hours, 0);
+  const B = g.reduce((t, r) => t + r.budget, 0);
+  const o = {n: g.length, S, H, B, mh: H ? S * 1000 / H : null, srate: B ? S / B : null};
+  if (lad && g.length) {
+    const P = g.reduce((t, r) => t + r.prop, 0);
+    Object.assign(o, {P, tgt: S * 1000 / P, ratio: P / H, hd: H - P, met: g.filter((r) => r.ratio >= 1).length});
+  }
+  return o;
+}
+
+/* ---------- 読み込み ---------- */
+function decode(buf) {
+  try { return new TextDecoder('utf-8', {fatal: true}).decode(buf).replace(/^﻿/, ''); }
+  catch (e) { return new TextDecoder('shift_jis').decode(buf); }
+}
+function parseDate(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number' && v > 19000000) { const s = String(Math.round(v)); return {ym: s.slice(0, 6), d: +s.slice(6, 8)}; }
+  if (v instanceof Date) return {ym: '' + v.getFullYear() + String(v.getMonth() + 1).padStart(2, '0'), d: v.getDate()};
+  const m = String(v).match(/(\d{4})\D?(\d{1,2})\D?(\d{1,2})/);
+  return m ? {ym: m[1] + m[2].padStart(2, '0'), d: +m[3]} : null;
+}
+function readDailyRows(aoa) {
+  const hi = aoa.findIndex((r) => r && r.includes('店舗コード') && r.includes('日報日付'));
+  if (hi < 0) return null;
+  const h = aoa[hi], ci = h.indexOf('店舗コード'), di = h.indexOf('日報日付'), si = h.indexOf('値引含む税抜売上'), ti = h.indexOf('人件費(時間)');
+  if (si < 0 || ti < 0) throw new Error('日報CSVに「値引含む税抜売上」または「人件費(時間)」の列が見つかりません。');
+  const cnt = {}, recs = [];
+  for (const r of aoa.slice(hi + 1)) {
+    if (!r || r[ci] == null || r[ci] === '') continue;
+    const dt = parseDate(r[di]); if (!dt) continue;
+    const s = Number(String(r[si]).replace(/,/g, '')) || 0, t = Number(String(r[ti]).replace(/,/g, '')) || 0;
+    recs.push({code: Number(r[ci]), ...dt, s, t}); cnt[dt.ym] = (cnt[dt.ym] || 0) + 1;
+  }
+  if (!recs.length) return null;
+  const ym = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
+  const act = {};
+  recs.filter((r) => r.ym === ym).forEach((r) => {
+    const s = (act[r.code] = act[r.code] || {}); const c = (s[r.d] = s[r.d] || [0, 0]);
+    c[0] += r.s / 1000; c[1] += r.t;
+  });
+  return {ym, act, n: recs.filter((r) => r.ym === ym).length};
+}
+function readHq(wb, fname) {
+  const ws = wb.Sheets['当月目標日割り']; if (!ws) return null;
+  const aoa = XLSX.utils.sheet_to_json(ws, {header: 1, defval: null});
+  const codes = aoa[0] || [], names = aoa[1] || [];
+  const days = [], stores = {};
+  for (const r of aoa.slice(2)) {
+    if (!r || typeof r[0] !== 'number' || r[0] < 1 || r[0] > 31 || typeof r[1] !== 'string') continue;
+    days.push([r[0], r[1].trim()]);
+    codes.forEach((c, j) => {
+      if (j < 2 || typeof c !== 'number') return;
+      const st = (stores[c] = stores[c] || {name: String(names[j] || c).trim(), budget: {}, ladder: null});
+      st.budget[r[0]] = Number(r[j]) || 0;
+    });
+  }
+  if (!days.length) throw new Error('「当月目標日割り」シートに日別の予算が見つかりません。');
+  const ls = wb.Sheets['当月指標 (3)'] || wb.Sheets['当月指標'];
+  if (ls) {
+    XLSX.utils.sheet_to_json(ls, {header: 1, defval: null}).forEach((r) => {
+      const c = r && r[2];
+      if (typeof c === 'number' && stores[c] && [4, 5, 6, 7].every((k) => typeof r[k] === 'number') && r[6] > 0) stores[c].ladder = [r[4], r[5], r[6], r[7]];
+    });
+  }
+  let ym = null;
+  for (const n of wb.SheetNames) {
+    const sh = wb.Sheets[n], e = sh['E1'] && sh['E1'].v, g = sh['G1'] && sh['G1'].v;
+    if (typeof e === 'number' && e > 2000 && typeof g === 'number' && g >= 1 && g <= 12) { ym = e + String(g).padStart(2, '0'); break; }
+  }
+  const fn = fname || '';
+  const m1 = fn.match(/(20\d{2})\D(\d{1,2})(?:\D|$)/), m2 = fn.match(/(?:^|\D)(\d{2})(\d{2})(?:\D|$)/);
+  if (!ym && m1 && +m1[2] >= 1 && +m1[2] <= 12) ym = m1[1] + m1[2].padStart(2, '0');
+  if (!ym && m2 && +m2[2] >= 1 && +m2[2] <= 12) ym = '20' + m2[1] + m2[2];
+  return {days, stores, ym};
+}
+async function handle(files) {
+  $('#msg').textContent = ''; $('#okmsg').textContent = '';
+  const hqs = [], drs = [], ok = [], errs = [];
+  for (const file of files) {
+    try {
+      const buf = await file.arrayBuffer();
+      if (/\.json$/i.test(file.name)) { const n = importBackup(decode(buf)); ok.push(`バックアップから${n}か月分を読み込みました`); continue; }
+      const wb = /\.(csv|txt)$/i.test(file.name) ? XLSX.read(decode(buf), {type: 'string', raw: true}) : XLSX.read(buf, {type: 'array', cellDates: false});
+      const hq = readHq(wb, file.name);
+      const dsheet = wb.Sheets['日報代入欄'] || (!hq ? wb.Sheets[wb.SheetNames[0]] : null);
+      const dr = dsheet ? readDailyRows(XLSX.utils.sheet_to_json(dsheet, {header: 1, defval: null, raw: true})) : null;
+      if (!hq && !dr) throw new Error(`「${file.name}」は本社Excelでも日報CSVでもないようです。`);
+      if (hq) hqs.push({hq, name: file.name, dym: dr && dr.ym});
+      if (dr) drs.push({dr, name: file.name});
+    } catch (e) { errs.push(e.message || String(e)); }
+  }
+  let touched = ok.length ? db.cur : null;
+  const batchYm = drs.length ? drs[0].dr.ym : null;
+  hqs.forEach(({hq, name, dym}) => {
+    const ym = hq.ym || dym || batchYm || thisYm();
+    const rec = db.history[ym] || blank(ym);
+    rec.days = hq.days; rec.stores = trimStores(hq.stores); rec.hqName = name;
+    db.history[ym] = rec; touched = ym; markDirty(ym); ok.push(`${ymLabel(ym)}の本社Excelを保存`);
+  });
+  drs.forEach(({dr, name}) => {
+    const rec = db.history[dr.ym] || blank(dr.ym);
+    rec.act = trimAct(dr.act); rec.csvName = name;
+    db.history[dr.ym] = rec; touched = dr.ym; markDirty(dr.ym); ok.push(`${ymLabel(dr.ym)}の日報を保存`);
+    if (!rec.days) errs.push(`${ymLabel(dr.ym)}の本社Excelがまだありません。Excelも読み込んでください。`);
+  });
+  if (touched) { db.cur = touched; state = db.history[touched]; save(); }
+  $('#okmsg').textContent = ok.join(' ／ ');
+  $('#msg').textContent = errs.join(' ');
+  render();
+}
+function importBackup(text) {
+  const d = JSON.parse(text);
+  if (!d || !d.history) throw new Error('バックアップのファイルではないようです。');
+  let n = 0;
+  Object.entries(d.history).forEach(([ym, rec]) => { if (/^\d{6}$/.test(ym) && rec) { db.history[ym] = rec; markDirty(ym); n++; } });
+  if (d.fyStart) { db.fyStart = d.fyStart; markDirty('_settings'); }
+  db.cur = months().filter((ym) => hasData(db.history[ym])).slice(-1)[0] || months().slice(-1)[0]; state = db.history[db.cur];
+  return n;
+}
+function backup() {
+  const blob = new Blob([JSON.stringify({app: '人時売上予算比分析', saved: new Date().toISOString(), fyStart: db.fyStart, history: db.history})], {type: 'application/json'});
+  const a = document.createElement('a'); const d = new Date();
+  a.href = URL.createObjectURL(blob); a.download = `人時売上予算比_バックアップ_${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}.json`;
+  document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  $('#okmsg').textContent = 'バックアップを保存しました';
+}
+
+/* ---------- 表示 ---------- */
+function ymLabel(ym) { return ym ? `${ym.slice(0, 4)}年${+ym.slice(4)}月` : ''; }
+function codesShown() { return BLOCK.filter((c) => state.stores && state.stores[c]); }
+function lastDayOf(rec) { let m = 0; BLOCK.forEach((c) => { const a = rec.act && rec.act[c]; if (a) Object.keys(a).forEach((d) => { if (a[d][1] > 0) m = Math.max(m, +d); }); }); return m; }
+function renderStatus() {
+  const hq = $('#stHq'), cs = $('#stCsv'), rec = state;
+  const lads = codesShown().filter((c) => rec.stores[c].ladder).length;
+  hq.className = 'st ' + (rec.days ? 'ok' : 'ng');
+  hq.querySelector(':scope > span').textContent = rec.days ? `${ymLabel(rec.ym)} ・ ${rec.days.length}日分の日割り予算 ・ 指標あり${lads}店舗` : `${ymLabel(rec.ym)}はまだ読み込んでいません`;
+  const nAct = Object.keys(rec.act || {}).length, ld = lastDayOf(rec);
+  cs.className = 'st ' + (nAct ? 'ok' : '');
+  cs.querySelector(':scope > span').textContent = nAct ? `${ymLabel(rec.ym)} ・ ${ld}日まで ・ ${nAct}店舗の実績` : '未読み込み（実績なしでも予定の人時予算は見られます）';
+  const sel = $('#month');
+  sel.innerHTML = months().slice().reverse().map((ym) => `<option value="${ym}">${ymLabel(ym)}</option>`).join('');
+  sel.value = rec.ym;
+  renderData();
+}
+let armed = null;
+function renderData() {
+  $('#dataList').innerHTML = months().slice().reverse().map((ym) => {
+    const r = db.history[ym], ld = lastDayOf(r);
+    return `<div class="drow"><b>${ymLabel(ym)}</b><span class="note">本社Excel ${r.days ? '✓' : '—'} ・ 日報 ${ld ? ld + '日まで' : '—'}</span><span class="sp"></span><button type="button" class="btn danger sm${armed === ym ? ' arm' : ''}" data-del="${ym}">${armed === ym ? '本当に削除' : '削除'}</button></div>`;
+  }).join('') || '<p class="note">まだ保存された月はありません。</p>';
+  $('#dataList').querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
+    const ym = b.dataset.del;
+    if (armed !== ym) { armed = ym; renderData(); return; }
+    armed = null; delete db.history[ym]; markDirty(ym);
+    if (!months().length) db.history[thisYm()] = blank(thisYm());
+    if (db.cur === ym) { db.cur = months().slice(-1)[0]; state = db.history[db.cur]; }
+    save(); render(); $('#dataBox').open = true;
+  });
+  const fs = $('#fyStart');
+  if (!fs.options.length) fs.innerHTML = Array.from({length: 12}, (_, i) => `<option value="${i + 1}">${i + 1}月</option>`).join('');
+  fs.value = db.fyStart;
+  $('#dataNote').textContent = user ? 'データはクラウドに保存され、ログインしたスマホとPCで同じ内容が見られます。念のため、ときどき「バックアップを保存」もしておくと安心です。' : 'データはこの端末の中だけに保存されます。機種変更やブラウザのデータ削除に備えて、ときどき「バックアップを保存」してください。バックアップのファイルをこの画面にドロップすると元に戻せます。';
+  $('#backupBtn').disabled = inFrame;
+  if (inFrame) $('#backupBtn').title = 'アプリ版で使えます';
+}
+function renderTabs() {
+  const el = $('#tabs');
+  const items = [['all', 'ブロック一覧'], ['trend', '推移'], ...codesShown().map((c) => [String(c), shortName(state.stores[c].name)])];
+  el.innerHTML = items.map(([k, n]) => `<button type="button" class="tab${k === 'trend' ? ' trend' : ''}" data-k="${k}" aria-pressed="${k === tab}">${esc(n)}</button>`).join('');
+  el.querySelectorAll('.tab').forEach((b) => b.onclick = () => { tab = b.dataset.k; render(); });
+}
+function pill(r) { return r == null ? '<td class="na">—</td>' : `<td><span class="pill ${tone(r)}">${pct(r)}</span></td>`; }
+function renderAll() {
+  const codes = codesShown();
+  if (!codes.length) return '<div class="panel empty">井村ブロックの店舗がExcelに見つかりません。</div>';
+  let rows = '', heat = '';
+  let tot = {S: 0, B: 0, H: 0, P: 0};
+  codes.forEach((c) => {
+    const st = state.stores[c], rs = storeRows(c), a = agg(rs, st.ladder);
+    tot.S += a.S; tot.B += a.B;
+    const name = esc(shortName(st.name));
+    rows += `<tr><td>${name}</td><td>${f0(a.B)}</td><td>${f0(a.S)}</td>${pill(a.srate)}` +
+      (st.ladder && a.n ? `<td>${f0(a.tgt)}</td><td>${f0(a.mh)}</td>${pill(a.ratio)}<td>${f1(a.P)}</td><td>${f1(a.H)}</td><td class="${a.hd > 0 ? 'bad' : 'ok'}">${sg(a.hd)}</td><td>${a.met} / ${a.n}日</td>`
+        : `<td class="na">${st.ladder ? '—' : '対象外'}</td><td>${a.mh ? f0(a.mh) : '—'}</td><td class="na">—</td><td class="na">—</td><td>${a.n ? f1(a.H) : '—'}</td><td class="na">—</td><td class="na">${a.n ? a.n + '日' : '—'}</td>`) + '</tr>';
+    if (st.ladder) {
+      heat += `<tr><td>${name}</td>`;
+      const groups = [1, 2, 3, 4, 5].map((w) => rs.filter((r) => r.week === w)).concat([rs.filter((r) => !isWE(r.dow)), rs.filter((r) => isWE(r.dow))]);
+      groups.forEach((g) => { const x = agg(g, st.ladder); heat += x.n ? `<td class="heat ${tone(x.ratio)}">${pct(x.ratio)}<small>${sg(x.hd)}h</small></td>` : '<td class="heat na">—</td>'; });
+      heat += '</tr>';
+    }
+  });
+  const srate = tot.B ? tot.S / tot.B : null;
+  return `<div class="panel">
+    <h2>店舗別 月累計（日報がある日まで）</h2>
+    <p class="note">売上は千円、人時売上は円、時間はh。時間差の＋は適正より多く人を入れた時間。</p>
+    <div class="tblbox two"><table>
+      <thead><tr><th></th><th class="g" colspan="3">売上</th><th class="g" colspan="3">人時売上</th><th class="g" colspan="3">労働時間</th><th></th></tr>
+      <tr><th>店舗</th><th>予算</th><th>実績</th><th>予算比</th><th>人時予算</th><th>実績</th><th>予算比</th><th>適正</th><th>実績</th><th>差</th><th>人時予算達成日</th></tr></thead>
+      <tbody>${rows}<tr class="tot"><td>ブロック合計</td><td>${f0(tot.B)}</td><td>${f0(tot.S)}</td>${pill(srate)}<td colspan="7"></td></tr></tbody>
+    </table></div>
+  </div>
+  <div class="panel" style="margin-top:16px">
+    <h2>週別・平日／土日の人時予算比</h2>
+    <p class="note">上段＝人時予算比、下段＝時間差。緑＝100%以上、黄＝95〜99%、赤＝95%未満。週は1日から7日ずつ区切り。</p>
+    <div class="tblbox heat"><table>
+      <thead><tr><th>店舗</th><th>第1週<br>1〜7日</th><th>第2週<br>8〜14日</th><th>第3週<br>15〜21日</th><th>第4週<br>22〜28日</th><th>第5週<br>29日〜</th><th>平日</th><th>土日</th></tr></thead>
+      <tbody>${heat}</tbody>
+    </table></div>
+  </div>`;
+}
+function renderStore(code, pdf) {
+  const st = state.stores[code], rs = storeRows(code), a = agg(rs, st.ladder);
+  const name = esc(shortName(st.name));
+  const lad = st.ladder;
+  const tiles = lad ? `
+    <div class="tile"><span class="l">人時予算比（累計）</span><span class="n ${a.n ? tone(a.ratio) : ''}">${a.n ? pct(a.ratio) : '—'}</span><span class="s">実績人時 ÷ 人時予算</span></div>
+    <div class="tile"><span class="l">人時売上 実績 / 予算</span><span class="n">${a.n ? f0(a.mh) : '—'}<small>/ ${a.n ? f0(a.tgt) : '—'}円</small></span><span class="s">従来の月指標 ${f0(target(lad, rs.reduce((t, r) => t + r.budget, 0) / state.days.length, state.days.length, false))}円</span></div>
+    <div class="tile"><span class="l">時間差（実績 − 適正）</span><span class="n ${a.n ? (a.hd > 0 ? 'bad' : 'ok') : ''}">${a.n ? sg(a.hd) : '—'}<small>h</small></span><span class="s">適正 ${a.n ? f1(a.P) : '—'}h ／ 実績 ${a.n ? f1(a.H) : '—'}h</span></div>
+    <div class="tile"><span class="l">人時予算 達成日</span><span class="n">${a.n ? a.met : '—'}<small>/ ${a.n}日</small></span><span class="s">売上予算比 ${a.srate ? pct(a.srate) : '—'}</span></div>`
+    : `<div class="tile"><span class="l">売上予算比（累計）</span><span class="n">${a.srate ? pct(a.srate) : '—'}</span><span class="s">実績 ${f0(a.S)} / 予算 ${f0(a.B)}千円</span></div>
+       <div class="tile"><span class="l">人時売上 実績</span><span class="n">${a.mh ? f0(a.mh) : '—'}<small>円</small></span><span class="s">フードコート業態のため指標対象外</span></div>`;
+  let body = '';
+  [1, 2, 3, 4, 5].forEach((w) => {
+    const g = rs.filter((r) => r.week === w); if (!g.length) return;
+    g.forEach((r) => {
+      const cls = (r.has ? '' : 'fut ') + (isWE(r.dow) ? 'we' : '');
+      const dl = `${r.day}日（${r.dow}）`;
+      if (r.has && lad) body += `<tr class="${cls}"><td>${dl}</td><td>${f0(r.budget)}</td><td>${f0(r.sales)}</td><td>${f0(r.tgt)}</td><td>${f0(r.mh)}</td>${pill(r.ratio)}<td>${f1(r.prop)}</td><td>${f1(r.hours)}</td><td class="${r.hdiff > 0 ? 'bad' : 'ok'}">${sg(r.hdiff)}</td></tr>`;
+      else if (r.has) body += `<tr class="${cls}"><td>${dl}</td><td>${f0(r.budget)}</td><td>${f0(r.sales)}</td><td class="na">対象外</td><td>${f0(r.mh)}</td><td class="na">—</td><td class="na">—</td><td>${f1(r.hours)}</td><td class="na">—</td></tr>`;
+      else body += `<tr class="${cls}"><td>${dl}</td><td>${f0(r.budget)}</td><td>—</td><td>${r.ptgt ? f0(r.ptgt) + '（予定）' : '—'}</td><td>—</td><td class="na">—</td><td>${r.pprop ? f1(r.pprop) + '（予定）' : '—'}</td><td>—</td><td class="na">—</td></tr>`;
+    });
+    const x = agg(g, lad);
+    if (x.n) body += lad
+      ? `<tr class="wk"><td>第${w}週計</td><td>${f0(x.B)}</td><td>${f0(x.S)}</td><td>${f0(x.tgt)}</td><td>${f0(x.mh)}</td>${pill(x.ratio)}<td>${f1(x.P)}</td><td>${f1(x.H)}</td><td class="${x.hd > 0 ? 'bad' : 'ok'}">${sg(x.hd)}</td></tr>`
+      : `<tr class="wk"><td>第${w}週計</td><td>${f0(x.B)}</td><td>${f0(x.S)}</td><td class="na">—</td><td>${f0(x.mh)}</td><td class="na">—</td><td class="na">—</td><td>${f1(x.H)}</td><td class="na">—</td></tr>`;
+  });
+  if (a.n) body += lad
+    ? `<tr class="tot"><td>累計</td><td>${f0(a.B)}</td><td>${f0(a.S)}</td><td>${f0(a.tgt)}</td><td>${f0(a.mh)}</td>${pill(a.ratio)}<td>${f1(a.P)}</td><td>${f1(a.H)}</td><td class="${a.hd > 0 ? 'bad' : 'ok'}">${sg(a.hd)}</td></tr>`
+    : `<tr class="tot"><td>累計</td><td>${f0(a.B)}</td><td>${f0(a.S)}</td><td class="na">—</td><td>${f0(a.mh)}</td><td class="na">—</td><td class="na">—</td><td>${f1(a.H)}</td><td class="na">—</td></tr>`;
+  const ladTxt = lad ? `指標の条件：MIN売上 ${f0(lad[0])}千円 ／ MIN人時 ${f0(lad[1])}円 ／ 売上 ${f0(lad[2])}千円ごとに人時 +${f0(lad[3])}円 ／ 月の日数 ${state.days.length}日` : '風月LIGHTはフードコート業態のため人時売上の指標管理は対象外です。';
+  return `<div class="tiles">${tiles}</div>
+  <div class="panel" style="margin-top:16px">
+    <h2>${name} 日別の人時売上</h2>
+    <p class="note">${esc(ladTxt)}</p>
+    ${lad ? `<div class="legend"><span><i style="background:var(--bar)"></i>人時実績（予算達成）</span><span><i style="background:var(--bar-mute)"></i>人時実績（未達）</span><span><i class="line"></i>人時予算（日報が無い日は予定）</span></div>
+    ${pdf ? `<div class="chart">${chartSvg(code, 718, true)}</div>` : '<div class="chart" id="chart"></div>'}` : ''}
+  </div>
+  <div class="panel" style="margin-top:16px">
+    <h2>日別明細</h2>
+    <p class="note">売上は千円、人時売上は円、時間はh。灰色の行は日報がまだ無い日で、予算売上から出した予定の人時予算・適正時間です。</p>
+    <div class="tblbox v"><table>
+      <thead><tr><th>日付</th><th>売上予算</th><th>売上実績</th><th>人時予算</th><th>人時実績</th><th>予算比</th><th>適正時間</th><th>実績時間</th><th>時間差</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>
+  </div>`;
+}
+const LIT = {'var(--line)': '#dbe2ee', 'var(--muted)': '#5a6680', 'var(--bar)': '#2b6be0', 'var(--bar-mute)': '#c6cfdd', 'var(--ref)': '#14213d', 'var(--ink)': '#14213d'};
+function chartSvg(code, W, lit) {
+  const c = (v) => lit ? LIT[v] : v;
+  const rs = storeRows(code);
+  const H = 250, ml = 46, mr = 6, mt = 10, mb = 34;
+  const vals = rs.flatMap((r) => [r.mh || 0, r.tgt || r.ptgt || 0]);
+  const mx = Math.max(...vals, 1) * 1.08;
+  const step = mx > 6000 ? 2000 : 1000, top = Math.ceil(mx / step) * step;
+  const y = (v) => H - mb - (H - mb - mt) * v / top, bw = (W - ml - mr) / rs.length;
+  const tx = (x, yy, t, extra) => `<text x="${x}" y="${yy}" ${extra || ''} font-family="BIZ UDPGothic, sans-serif" font-size="11" fill="${c('var(--muted)')}">${t}</text>`;
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="日別の人時売上">`;
+  for (let v = 0; v <= top; v += step) s += `<line x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}" stroke="${c('var(--line)')}"/>` + tx(ml - 6, y(v), v.toLocaleString('ja-JP'), 'dy="0.35em" text-anchor="end"');
+  const lab = bw >= 16 ? 1 : bw >= 9 ? 2 : 7;
+  rs.forEach((r, i) => {
+    const x0 = ml + i * bw + bw * .12, w = bw * .76, t = r.tgt || r.ptgt;
+    if (r.has) s += `<rect x="${x0}" y="${y(r.mh)}" width="${w}" height="${y(0) - y(r.mh)}" rx="2" fill="${r.ratio >= 1 ? c('var(--bar)') : c('var(--bar-mute)')}"/>`;
+    if (t) s += `<line x1="${x0 - 1.5}" x2="${x0 + w + 1.5}" y1="${y(t)}" y2="${y(t)}" stroke="${c('var(--ref)')}" stroke-width="2" ${r.has ? '' : 'stroke-dasharray="3 2" opacity=".55"'}/>`;
+    if ((r.day - 1) % lab === 0) s += tx(x0 + w / 2, H - mb + 13, r.day, 'text-anchor="middle"') + tx(x0 + w / 2, H - mb + 26, r.dow, 'text-anchor="middle"' + (isWE(r.dow) ? ` font-weight="700" style="fill:${c('var(--ink)')}"` : ''));
+    if (!lit) s += `<rect class="hit" data-i="${i}" x="${ml + i * bw}" y="${mt}" width="${bw}" height="${H - mt - mb}" fill="transparent"/>`;
+  });
+  s += `<line x1="${ml}" x2="${W - mr}" y1="${y(0)}" y2="${y(0)}" stroke="${c('var(--muted)')}"/></svg>`;
+  return s;
+}
+function drawChart(code) {
+  const el = $('#chart'); if (!el) return;
+  const rs = storeRows(code);
+  const W = Math.max(320, el.clientWidth);
+  el.innerHTML = chartSvg(code, W, false) + '<div class="tip" hidden></div>';
+  const tip = el.querySelector('.tip');
+  el.querySelectorAll('.hit').forEach((h) => {
+    h.addEventListener('pointerenter', () => {
+      const r = rs[+h.dataset.i];
+      tip.innerHTML = `<div class="h">${r.day}日（${r.dow}）</div>` + (r.has
+        ? `売上 ${f0(r.sales)}千円<br>人時 実績 ${f0(r.mh)} ／ 予算 ${f0(r.tgt)}円<br><b class="${tone(r.ratio)}">予算比 ${pct(r.ratio)}</b> ・ 時間差 ${sg(r.hdiff)}h`
+        : `予算売上 ${f0(r.budget)}千円<br>予定の人時予算 ${r.ptgt ? f0(r.ptgt) : '—'}円<br>予定の適正時間 ${r.pprop ? f1(r.pprop) : '—'}h`);
+      tip.hidden = false;
+      const bx = +h.getAttribute('x') / W * el.clientWidth;
+      const tw = tip.offsetWidth;
+      tip.style.left = Math.max(0, Math.min(el.clientWidth - tw, bx - tw / 2)) + 'px';
+      tip.style.top = '0px';
+    });
+    h.addEventListener('pointerleave', () => { tip.hidden = true; });
+  });
+}
+
+/* ---------- PDF ---------- */
+const inFrame = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+let lastPdf = null;
+function lastActualDay() { let m = 0; codesShown().forEach((c) => storeRows(c).forEach((r) => { if (r.has) m = Math.max(m, r.day); })); return m; }
+function repHead(title) {
+  const ym = ymLabel(state.ym || state.ymHq) || '';
+  const ld = lastActualDay();
+  const d = new Date();
+  return `<div class="rep-h"><div><p class="sub">鶴橋風月 井村ブロック ・ ${esc(ym)}${ld ? `（${ld}日までの実績）` : ''}</p><h1>${esc(title)}</h1></div><p class="sub">人時売上予算比分析 ・ 作成 ${d.getMonth() + 1}/${d.getDate()}</p></div>`;
+}
+function renderPdfBar() {
+  const sel = $('#pdfTarget'); const cur = sel.value;
+  sel.innerHTML = '<option value="all">ブロック全体（全店）</option><option value="trend">年度の推移</option>' + codesShown().map((c) => `<option value="${c}">${esc(shortName(state.stores[c].name))}のみ</option>`).join('');
+  if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  const ok = typeof html2canvas !== 'undefined' && window.jspdf && !inFrame;
+  $('#pdfBtn').disabled = !ok;
+  if (!ok && !$('#pdfNote').textContent) $('#pdfNote').textContent = inFrame ? 'PDF作成はホーム画面に追加したアプリ版で使えます' : 'PDFの部品が読み込めませんでした';
+}
+async function makePdf() {
+  const sel = $('#pdfTarget').value, btn = $('#pdfBtn');
+  btn.disabled = true; btn.textContent = '作成中…'; $('#shareBtn').hidden = true; $('#pdfNote').textContent = '';
+  const host = document.createElement('div'); host.className = 'rep-host';
+  const codes = sel === 'all' || sel === 'trend' ? codesShown() : [sel];
+  const pages = [];
+  if (sel === 'trend') pages.push(repHead(`${fyLabel(trendFy || fyOf(state.ym))} 推移`) + renderTrend(true));
+  if (sel === 'all') pages.push(repHead('ブロック全体') + renderAll());
+  (sel === 'trend' ? [] : codes).forEach((c) => pages.push(repHead(shortName(state.stores[c].name)) + renderStore(c, true)));
+  host.innerHTML = pages.map((p) => `<div class="rep">${p}</div>`).join('');
+  document.body.append(host);
+  try {
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const {jsPDF} = window.jspdf; const pdf = new jsPDF({unit: 'mm', format: 'a4', compress: true});
+    const els = host.querySelectorAll('.rep');
+    for (let i = 0; i < els.length; i++) {
+      const cv = await html2canvas(els[i], {scale: 2, backgroundColor: '#ffffff', useCORS: true});
+      let w = 200, h = cv.height * w / cv.width;
+      if (h > 287) { h = 287; w = cv.width * h / cv.height; }
+      if (i) pdf.addPage();
+      pdf.addImage(cv.toDataURL('image/jpeg', 0.9), 'JPEG', (210 - w) / 2, 5, w, h);
+    }
+    const ym = (ymLabel(state.ym || state.ymHq) || '').replace(/\s/g, '');
+    const nm = sel === 'trend' ? `人時売上予算比_${fyLabel(trendFy || fyOf(state.ym))}_推移.pdf` : `人時売上予算比_${ym}_${sel === 'all' ? 'ブロック全体' : shortName(state.stores[sel].name)}.pdf`;
+    const blob = pdf.output('blob');
+    lastPdf = new File([blob], nm, {type: 'application/pdf'});
+    pdf.save(nm);
+    $('#pdfNote').textContent = `「${nm}」を保存しました`;
+    $('#shareBtn').hidden = !(navigator.canShare && navigator.canShare({files: [lastPdf]}));
+  } catch (e) { $('#pdfNote').textContent = 'PDFを作れませんでした：' + (e.message || e); }
+  host.remove(); btn.disabled = false; btn.textContent = 'PDFを作成';
+}
+/* ---------- 推移 ---------- */
+const SCOL = {213: '#1e3a6e', 214: '#d9822b', 223: '#0f8b8d', 224: '#2b6be0', 807: '#8e44ad', 405: '#7a8597'};
+function fyOf(ym) { const y = +ym.slice(0, 4), m = +ym.slice(4); return m >= db.fyStart ? y : y - 1; }
+function fyMonths(fy) { return Array.from({length: 12}, (_, i) => { let m = db.fyStart + i, y = fy; if (m > 12) { m -= 12; y++; } return '' + y + String(m).padStart(2, '0'); }); }
+function fyLabel(fy) { return db.fyStart === 1 ? `${fy}年` : `${fy}年度`; }
+function mAgg(ym, code) {
+  const rec = db.history[ym]; if (!rec || !rec.days || !rec.stores || !rec.stores[code]) return null;
+  const a = agg(storeRows(code, rec), rec.stores[code].ladder);
+  if (!a.n) return null; a.part = a.n < rec.days.length; a.ld = lastDayOf(rec); return a;
+}
+function sumAgg(list) {
+  const o = {S: 0, B: 0, H: 0, P: 0, hasP: false, n: 0};
+  list.forEach((a) => { if (!a) return; o.S += a.S; o.B += a.B; o.H += a.H; o.n++; if (a.P != null) { o.P += a.P; o.hasP = true; } });
+  if (!o.n) return null;
+  o.srate = o.B ? o.S / o.B : null; o.mh = o.S * 1000 / o.H;
+  if (o.hasP) { o.ratio = o.P / o.H; o.tgt = o.S * 1000 / o.P; o.hd = o.H - o.P; }
+  return o;
+}
+function trendChart(fy, codes, W, lit) {
+  const ms = fyMonths(fy), H = 260, ml = 50, mr = 14, mt = 14, mb = 28;
+  const pts = codes.map((c) => ms.map((ym) => { const a = mAgg(ym, c); return a && a.ratio != null ? a.ratio : null; }));
+  const all = pts.flat().filter((v) => v != null);
+  const lo = Math.min(0.85, Math.floor((Math.min(...all, 1) - 0.02) * 20) / 20), hi = Math.max(1.15, Math.ceil((Math.max(...all, 1) + 0.02) * 20) / 20);
+  const x = (i) => ml + (W - ml - mr) * (i + 0.5) / 12, y = (v) => mt + (H - mt - mb) * (hi - v) / (hi - lo);
+  const col = (v) => lit ? ({'var(--line)': '#dbe2ee', 'var(--muted)': '#5a6680', 'var(--ref)': '#14213d'})[v] : v;
+  const tx = (xx, yy, t, ex) => `<text x="${xx}" y="${yy}" ${ex || ''} font-family="BIZ UDPGothic, sans-serif" font-size="11" fill="${col('var(--muted)')}">${t}</text>`;
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="人時予算比の推移">`;
+  for (let v = Math.ceil(lo * 20) / 20; v <= hi + 1e-9; v += 0.05) {
+    const one = Math.abs(v - 1) < 1e-9;
+    s += `<line x1="${ml}" x2="${W - mr}" y1="${y(v)}" y2="${y(v)}" stroke="${one ? col('var(--ref)') : col('var(--line)')}" ${one ? 'stroke-dasharray="5 3"' : ''}/>` + tx(ml - 6, y(v), Math.round(v * 100) + '%', 'dy="0.35em" text-anchor="end"');
+  }
+  ms.forEach((ym, i) => { s += tx(x(i), H - 8, (+ym.slice(4)) + '月', 'text-anchor="middle"'); });
+  codes.forEach((c, k) => {
+    const p = pts[k]; let d = '';
+    p.forEach((v, i) => { if (v == null) return; d += (d && p[i - 1] != null ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); });
+    if (d) s += `<path d="${d}" fill="none" stroke="${SCOL[c]}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    p.forEach((v, i) => { if (v != null) s += `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="${SCOL[c]}"/>`; });
+  });
+  return s + '</svg>';
+}
+function renderTrend(pdf) {
+  const fys = [...new Set(months().filter((ym) => db.history[ym].days).map(fyOf))].sort();
+  if (!fys.length) return '<div class="panel empty">まだ保存された月がありません。本社Excelと日報CSVを読み込むと、ここに月ごとの推移が貯まっていきます。</div>';
+  if (trendFy == null || !fys.includes(trendFy)) trendFy = fyOf(state.ym && db.history[state.ym] && db.history[state.ym].days ? state.ym : months().slice(-1)[0]);
+  if (!fys.includes(trendFy)) trendFy = fys[fys.length - 1];
+  const fy = trendFy, ms = fyMonths(fy);
+  const codes = BLOCK.filter((c) => ms.some((ym) => db.history[ym] && db.history[ym].stores && db.history[ym].stores[c]));
+  const lc = codes.filter((c) => ms.some((ym) => db.history[ym] && db.history[ym].stores[c] && db.history[ym].stores[c].ladder));
+  const nm = (c) => { for (const ym of ms) { const r = db.history[ym]; if (r && r.stores && r.stores[c]) return shortName(r.stores[c].name); } return String(c); };
+  const has = ms.map((ym) => !!(db.history[ym] && db.history[ym].days));
+  const head = `<tr><th>店舗</th>${ms.map((ym) => `<th>${+ym.slice(4)}月</th>`).join('')}<th>${pdf ? '累計' : '年度累計'}</th></tr>`;
+  const cell = (a, kind) => {
+    if (!a) return '<td class="heat na">—</td>';
+    const part = a.part ? `<span class="part">${a.ld}日まで</span>` : '';
+    if (kind === 'ratio') return a.ratio == null ? '<td class="heat na">対象外</td>' : `<td class="heat ${tone(a.ratio)}">${pct(a.ratio)}<small>${sg(a.hd)}h</small>${part}</td>`;
+    if (kind === 'srate') return `<td class="heat ${tone(a.srate)}">${pct(a.srate)}<small>${f0(a.S)}千円</small>${part}</td>`;
+    return `<td>${f0(a.mh)}<small style="display:block;font-size:.72rem;color:var(--muted)">${a.tgt ? '予算 ' + f0(a.tgt) : '指標対象外'}</small>${part}</td>`;
+  };
+  const table = (kind, list, blockLabel) => {
+    let b = list.map((c) => { const row = ms.map((ym) => mAgg(ym, c)); return `<tr><td><i style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;background:${SCOL[c]}"></i>${esc(nm(c))}</td>${row.map((a) => cell(a, kind)).join('')}${cell(sumAgg(row), kind)}</tr>`; }).join('');
+    if (blockLabel) { const row = ms.map((ym) => sumAgg(list.map((c) => mAgg(ym, c)))); b += `<tr class="tot"><td>${blockLabel}</td>${row.map((a) => cell(a, kind)).join('')}${cell(sumAgg(row), kind)}</tr>`; }
+    return `<div class="tblbox"><table><thead>${head}</thead><tbody>${b}</tbody></table></div>`;
+  };
+  const sel = pdf ? '' : `<div class="trendbar"><label for="fySel"><b>表示する年度</b></label><select id="fySel">${fys.map((f) => `<option value="${f}"${f === fy ? ' selected' : ''}>${fyLabel(f)}</option>`).join('')}</select><span class="note">${db.fyStart}月始まり ・ 保存済み ${has.filter(Boolean).length}か月</span></div>`;
+  return `${sel}
+  <div class="panel" ${pdf ? '' : 'style="margin-top:12px"'}>
+    <h2>人時予算比の推移（${fyLabel(fy)}）</h2>
+    <p class="note">月ごとの「実績人時 ÷ 日別人時予算の積み上げ」。点線が100%。月の途中のデータは日報がある日までで計算しています。</p>
+    <div class="legend">${lc.map((c) => `<span><i style="background:${SCOL[c]}"></i>${esc(nm(c))}</span>`).join('')}</div>
+    <div class="chart" id="trendChart">${pdf ? trendChart(fy, lc, 718, true) : ''}</div>
+  </div>
+  <div class="panel" style="margin-top:16px">
+    <h2>人時予算比 月別</h2>
+    <p class="note">上段＝人時予算比、下段＝時間差（実績 − 適正、h）。緑＝100%以上、黄＝95〜99%、赤＝95%未満。</p>
+    ${table('ratio', lc, '井村ブロック（指標対象店）')}
+  </div>
+  <div class="panel" style="margin-top:16px">
+    <h2>人時売上 実績と人時予算 月別（円）</h2>
+    ${table('mh', codes, '')}
+  </div>
+  <div class="panel" style="margin-top:16px">
+    <h2>売上予算比 月別</h2>
+    <p class="note">上段＝売上予算比、下段＝売上実績（千円）。</p>
+    ${table('srate', codes, '井村ブロック合計')}
+  </div>`;
+}
+function render() {
+  renderStatus(); renderTabs();
+  if (tab !== 'all' && tab !== 'trend' && !(state.stores && state.stores[tab])) tab = 'all';
+  if (tab !== 'trend' && !state.days) { $('#view').innerHTML = `<div class="panel empty">${ymLabel(state.ym)}の本社Excelがまだありません。Excelを読み込むと表示されます。</div>`; renderPdfBar(); return; }
+  $('#view').innerHTML = tab === 'all' ? renderAll() : tab === 'trend' ? renderTrend(false) : renderStore(tab);
+  if (tab === 'trend') {
+    const el = $('#trendChart'); if (el) { const fy = trendFy, ms = fyMonths(fy); const lc = BLOCK.filter((c) => ms.some((ym) => db.history[ym] && db.history[ym].stores && db.history[ym].stores[c] && db.history[ym].stores[c].ladder)); el.innerHTML = trendChart(fy, lc, Math.max(320, el.clientWidth), false); }
+    const fs = $('#fySel'); if (fs) fs.onchange = () => { trendFy = +fs.value; render(); };
+  }
+  if (tab !== 'all' && tab !== 'trend') drawChart(tab);
+  renderPdfBar();
+}
+
+/* ---------- 同期（Firebase）：users/{uid}/jinji/history/{ym} に月ごとのJSON文字列、settings に設定 ---------- */
+const FB_CONFIG = {
+  apiKey: 'AIzaSyCgOjrGKPaOOsfA9eJ_KMrU-qxH1aixlok',
+  authDomain: 'jinji-yosanhi.firebaseapp.com',
+  databaseURL: 'https://jinji-yosanhi-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId: 'jinji-yosanhi',
+  storageBucket: 'jinji-yosanhi.firebasestorage.app',
+  messagingSenderId: '689305054312',
+  appId: '1:689305054312:web:e57a5d4b5279f5195e9fdd'
+};
+const PKEY = KEY + '-pending';
+const syncable = typeof firebase !== 'undefined' && !inFrame;
+let pending = new Set((() => { try { return JSON.parse(localStorage.getItem(PKEY) || '[]'); } catch (e) { return []; } })());
+let user = null, uref = null, online = false, ready = false, syncErr = '', retryT = null;
+function savePending() { try { localStorage.setItem(PKEY, JSON.stringify([...pending])); } catch (e) {} }
+function markDirty(k) { if (!syncable) return; pending.add(k); savePending(); }
+function hasData(r) { return r && (r.days || Object.keys(r.act || {}).length); }
+function settingsObj() { return {fyStart: db.fyStart || 4, cap: capOn()}; }
+function pushNow() {
+  if (!user || !uref || !ready) { renderAcct(); return; }
+  pending.forEach((k) => {
+    const isSet = k === '_settings', rec = isSet ? null : db.history[k];
+    const body = isSet ? JSON.stringify(settingsObj()) : rec ? JSON.stringify(rec) : null;
+    const ref = isSet ? uref.child('settings') : uref.child('history/' + k);
+    const p = isSet ? ref.set(settingsObj()) : body ? ref.set(body) : ref.remove();
+    p.then(() => {
+      const now = isSet ? JSON.stringify(settingsObj()) : db.history[k] ? JSON.stringify(db.history[k]) : null;
+      if (now === body) { pending.delete(k); savePending(); }
+      syncErr = ''; renderAcct();
+    }).catch((e) => { syncErr = '保存できませんでした（' + (e.code || e.message) + '）'; renderAcct(); });
+  });
+  renderAcct();
+}
+function applyRemote(remote) {
+  const h = {};
+  Object.entries(remote || {}).forEach(([ym, v]) => { try { const r = typeof v === 'string' ? JSON.parse(v) : v; if (r) h[ym] = r; } catch (e) {} });
+  pending.forEach((k) => { if (k[0] === '_') return; if (db.history[k]) h[k] = db.history[k]; else delete h[k]; });
+  if (!Object.keys(h).length) h[thisYm()] = blank(thisYm());
+  db.history = h;
+  if (!h[db.cur]) db.cur = months().slice(-1)[0];
+  state = h[db.cur];
+  saveLocal(); render();
+}
+async function startSync(u) {
+  clearTimeout(retryT);
+  try {
+    uref = firebase.database().ref('users/' + u.uid + '/jinji');
+    let flag = null; try { flag = localStorage.getItem(KEY + '-uid'); } catch (e) {}
+    if (flag !== u.uid) { // この端末で初めてのログイン：端末にだけある月をクラウドへ上げる
+      const [hs, ss] = await Promise.all([uref.child('history').get(), uref.child('settings').get()]);
+      const remote = hs.val() || {};
+      months().forEach((ym) => { if (!remote[ym] && hasData(db.history[ym])) pending.add(ym); });
+      if (!ss.exists()) pending.add('_settings');
+      savePending(); try { localStorage.setItem(KEY + '-uid', u.uid); } catch (e) {}
+    }
+    if (user !== u) return;
+    ready = true;
+    uref.child('history').on('value', (snap) => applyRemote(snap.val()), (e) => { syncErr = '読み込めませんでした（' + (e.code || e.message) + '）'; renderAcct(); });
+    uref.child('settings').on('value', (snap) => {
+      const v = snap.val(); if (!v || pending.has('_settings')) return;
+      db.fyStart = v.fyStart || 4; trendFy = null;
+      try { localStorage.setItem(KEY + '-cap', v.cap ? '1' : '0'); } catch (e) {}
+      $('#cap').checked = !!v.cap; saveLocal(); render();
+    });
+    pushNow();
+  } catch (e) {
+    syncErr = '通信できません。つながったら自動で同期します'; renderAcct();
+    retryT = setTimeout(() => { if (user === u && !ready) startSync(u); }, 15000);
+  }
+}
+function stopSync() { clearTimeout(retryT); if (uref) { uref.child('history').off(); uref.child('settings').off(); } uref = null; ready = false; }
+function renderAcct() {
+  const el = $('#acct'); if (!el) return;
+  if (!syncable) { el.hidden = true; return; }
+  el.hidden = false;
+  if (!user) { el.innerHTML = '<span><i class="sdot"></i>この端末だけに保存中</span><button type="button" class="btn sm onnavy" id="loginOpen">ログインして同期</button>'; $('#loginOpen').onclick = openLogin; return; }
+  const n = pending.size;
+  const [cls, txt] = syncErr ? ['err', syncErr] : !ready ? ['wait', '同期の準備中…'] : !online ? ['wait', 'オフライン（つながったら同期します）'] : n ? ['wait', `送信中…（${n}件）`] : ['ok', 'クラウドと同期済み'];
+  el.innerHTML = `<span title="${esc(user.email || '')}"><i class="sdot ${cls}"></i>${esc(txt)}</span><button type="button" class="linkbtn" id="logoutBtn">ログアウト</button>`;
+  $('#logoutBtn').onclick = () => { if (pending.size && !confirmLogout()) return; firebase.auth().signOut(); };
+}
+let logoutArmed = false;
+function confirmLogout() { if (logoutArmed) return true; logoutArmed = true; syncErr = 'まだ送信していないデータがあります。もう一度押すとログアウトします'; renderAcct(); setTimeout(() => { logoutArmed = false; if (syncErr.startsWith('まだ送信')) { syncErr = ''; renderAcct(); } }, 5000); return false; }
+function openLogin() { $('#lgMsg').textContent = ''; $('#loginDlg').showModal(); setTimeout(() => $('#lgEmail').focus(), 50); }
+const AUTH_MSG = {'auth/invalid-credential': 'メールアドレスかパスワードが違います', 'auth/wrong-password': 'メールアドレスかパスワードが違います', 'auth/user-not-found': 'メールアドレスかパスワードが違います', 'auth/invalid-email': 'メールアドレスの形が正しくありません', 'auth/too-many-requests': '何度も失敗したため、しばらく待ってからもう一度試してください', 'auth/network-request-failed': '通信できませんでした。電波のよい所でもう一度試してください'};
+if (syncable) {
+  firebase.initializeApp(FB_CONFIG);
+  firebase.database().ref('.info/connected').on('value', (s) => { online = !!s.val(); if (online && user && !ready) startSync(user); renderAcct(); });
+  firebase.auth().onAuthStateChanged((u) => {
+    stopSync(); user = u || null; syncErr = '';
+    if (user) startSync(user);
+    renderAcct(); renderData();
+  });
+  $('#loginForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault(); $('#lgBtn').disabled = true; $('#lgMsg').textContent = '';
+    try { await firebase.auth().signInWithEmailAndPassword($('#lgEmail').value.trim(), $('#lgPass').value); $('#lgPass').value = ''; $('#loginDlg').close(); }
+    catch (e) { $('#lgMsg').textContent = AUTH_MSG[e.code] || ('ログインできませんでした（' + (e.code || e.message) + '）'); }
+    $('#lgBtn').disabled = false;
+  });
+  $('#lgCancel').addEventListener('click', () => $('#loginDlg').close());
+}
+renderAcct();
+
+/* ---------- 操作 ---------- */
+const drop = $('#drop');
+['dragenter', 'dragover'].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((e) => drop.addEventListener(e, (ev) => { ev.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', (ev) => handle([...ev.dataTransfer.files]));
+document.addEventListener('dragover', (ev) => ev.preventDefault());
+document.addEventListener('drop', (ev) => { ev.preventDefault(); if (!drop.contains(ev.target)) handle([...ev.dataTransfer.files]); });
+$('#file').addEventListener('change', (ev) => { handle([...ev.target.files]); ev.target.value = ''; });
+$('#month').addEventListener('change', (ev) => { db.cur = ev.target.value; state = db.history[db.cur]; save(); render(); });
+$('#fyStart').addEventListener('change', (ev) => { db.fyStart = +ev.target.value; trendFy = null; markDirty('_settings'); save(); render(); });
+$('#backupBtn').addEventListener('click', backup);
+$('#cap').checked = capOn();
+$('#pdfBtn').addEventListener('click', makePdf);
+$('#shareBtn').addEventListener('click', async () => { if (!lastPdf) return; try { await navigator.share({files: [lastPdf], title: lastPdf.name}); } catch (e) {} });
+$('#cap').addEventListener('change', () => { try { localStorage.setItem(KEY + '-cap', $('#cap').checked ? '1' : '0'); } catch (e) {} markDirty('_settings'); pushNow(); render(); });
+let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (tab === 'trend') render(); else if (tab !== 'all') drawChart(tab); }, 150); });
+if (typeof XLSX === 'undefined') $('#msg').textContent = '読み込み用の部品が読み込めませんでした。ページを再読み込みしてください。';
+render();
+</script>
+
+</body>
+</html>
