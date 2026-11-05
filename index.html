@@ -253,10 +253,11 @@ dialog.login .row { display: flex; gap: 8px; justify-content: flex-end; margin-t
       <span class="note" id="pdfNote"></span>
     </div>
     <div class="pdfbar">
-      <b>LINEに送る</b>
+      <b>LINE・LINE WORKSに送る</b>
       <button type="button" class="btn ghost" id="lineBtn">LINE文をつくる</button>
       <button type="button" class="btn ghost" id="imgBtn">画像をつくる</button>
       <button type="button" class="btn ghost" id="imgShareBtn" hidden>画像をLINEなどで送る</button>
+      <button type="button" class="btn ghost" id="imgSaveBtn" hidden>画像を保存</button>
       <span class="note" id="lineNote"></span>
     </div>
     <dialog class="login" id="lineDlg" style="width:min(94vw,560px)">
@@ -870,8 +871,13 @@ async function copyLine() {
   $('#lineMsg').textContent = 'コピーしました。LINEに貼り付けてください';
 }
 let lastImgs = null;
+async function saveImages() {
+  if (!lastImgs) return;
+  for (const f of lastImgs) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.append(a); a.click(); await new Promise((r) => setTimeout(r, 400)); URL.revokeObjectURL(a.href); a.remove(); }
+  $('#lineNote').textContent = `${lastImgs.length}枚の画像を保存しました（ダウンロードのフォルダ）。LINE WORKSのトークにドラッグして送れます`;
+}
 async function makeImages() {
-  const btn = $('#imgBtn'); $('#imgShareBtn').hidden = true; $('#lineNote').textContent = '';
+  const btn = $('#imgBtn'); $('#imgShareBtn').hidden = true; $('#imgSaveBtn').hidden = true; $('#lineNote').textContent = '';
   const rp = buildReport(state);
   if (!rp) { $('#lineNote').textContent = `${ymLabel(state.ym)}の日報がまだないため、作れません`; return; }
   btn.disabled = true; btn.textContent = '作成中…';
@@ -886,11 +892,9 @@ async function makeImages() {
       files.push(new File([blob], nm, {type: 'image/png'}));
     }
     lastImgs = files;
-    if (navigator.canShare && navigator.canShare({files})) { $('#imgShareBtn').hidden = false; $('#lineNote').textContent = `${files.length}枚の画像ができました。「画像をLINEなどで送る」を押してください`; }
-    else {
-      for (const f of files) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.append(a); a.click(); await new Promise((r) => setTimeout(r, 400)); URL.revokeObjectURL(a.href); a.remove(); }
-      $('#lineNote').textContent = `${files.length}枚の画像を保存しました（ダウンロードのフォルダ）`;
-    }
+    $('#imgSaveBtn').hidden = false;
+    if (navigator.canShare && navigator.canShare({files})) { $('#imgShareBtn').hidden = false; $('#lineNote').textContent = `${files.length}枚の画像ができました。「画像をLINEなどで送る」か「画像を保存」を押してください`; }
+    else await saveImages();
   } catch (e) { $('#lineNote').textContent = '画像を作れませんでした：' + (e.message || e); }
   host.remove(); btn.disabled = false; btn.textContent = '画像をつくる';
 }
@@ -1121,6 +1125,7 @@ $('#lineCopy').addEventListener('click', copyLine);
 $('#lineClose').addEventListener('click', () => $('#lineDlg').close());
 $('#lineShare').addEventListener('click', async () => { try { await navigator.share({text: $('#lineText').value}); } catch (e) {} });
 $('#imgBtn').addEventListener('click', makeImages);
+$('#imgSaveBtn').addEventListener('click', saveImages);
 $('#imgShareBtn').addEventListener('click', async () => { if (!lastImgs) return; try { await navigator.share({files: lastImgs}); } catch (e) {} });
 $('#shareBtn').addEventListener('click', async () => { if (!lastPdf) return; try { await navigator.share({files: [lastPdf], title: lastPdf.name}); } catch (e) {} });
 $('#cap').addEventListener('change', () => { try { localStorage.setItem(KEY + '-cap', $('#cap').checked ? '1' : '0'); } catch (e) {} markDirty('_settings'); pushNow(); render(); });
