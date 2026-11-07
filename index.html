@@ -192,6 +192,7 @@ dialog.login .row { display: flex; gap: 8px; justify-content: flex-end; margin-t
     <div>
       <h1>人時売上予算比分析</h1>
       <p class="sub">本社の月次Excelと日報CSVから、日ごとの人時売上予算と適正時間を出します</p>
+      <p class="sub" id="blockLabel" style="font-weight:700;color:#fff"></p>
     </div>
     <div class="headr">
       <div class="acct" id="acct" hidden></div>
@@ -238,6 +239,8 @@ dialog.login .row { display: flex; gap: 8px; justify-content: flex-end; margin-t
       <summary>保存しているデータ</summary>
       <div class="dlist" id="dataList"></div>
       <div class="datarow">
+        <label for="blockSel">ブロック</label>
+        <select id="blockSel"></select>
         <label for="fyStart">年度の始まり</label>
         <select id="fyStart"></select>
         <button type="button" class="btn ghost sm" id="backupBtn">バックアップを保存</button>
@@ -260,7 +263,14 @@ dialog.login .row { display: flex; gap: 8px; justify-content: flex-end; margin-t
       <button type="button" class="btn ghost" id="imgSaveBtn" hidden>画像を保存</button>
       <span class="note" id="lineNote"></span>
     </div>
-    <dialog class="login" id="lineDlg" style="width:min(94vw,560px)">
+    <dialog class="login" id="blockDlg">
+    <form method="dialog">
+      <h2>ブロックを選んでください</h2>
+      <p class="note">あなたが担当するブロックを選んでください。あとから「保存しているデータ」で変えられます。</p>
+      <div id="blockPick" style="display:grid;gap:8px"></div>
+    </form>
+  </dialog>
+  <dialog class="login" id="lineDlg" style="width:min(94vw,560px)">
       <form method="dialog" id="lineForm">
         <h2>LINE文</h2>
         <p class="note">そのまま送れます。「ひとこと」は書きかえてもOKです。</p>
@@ -283,7 +293,22 @@ dialog.login .row { display: flex; gap: 8px; justify-content: flex-end; margin-t
 <script src="./firebase-database-compat.js"></script>
 <script>
 const SAMPLE = null;
-const BLOCK = [213, 214, 223, 224, 807, 405];
+/* ブロックの定義（店番の並び順＝表示順。指標の有無は本社Excelの当月指標で自動判定） */
+const BLOCKS = {
+  imura: {name: '井村ブロック', codes: [213, 214, 223, 224, 807, 405]},
+  fujiwara: {name: '藤原ブロック', codes: [201, 203, 226, 228, 809]},
+};
+function storedBlock() { try { return localStorage.getItem('jinji-navi-v2-block'); } catch (e) { return null; } }
+let blockId = BLOCKS[storedBlock()] ? storedBlock() : 'imura';
+let BLOCK = BLOCKS[blockId].codes.slice();
+const blockName = () => BLOCKS[blockId].name;
+function setBlock(id, sync) {
+  if (!BLOCKS[id]) return;
+  blockId = id; BLOCK = BLOCKS[id].codes.slice();
+  try { localStorage.setItem('jinji-navi-v2-block', id); } catch (e) {}
+  if (sync) { markDirty('_settings'); pushNow(); }
+  if (typeof render === 'function' && document.readyState !== 'loading') render();
+}
 const KEY = 'jinji-navi-v2';
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 
@@ -416,15 +441,26 @@ function readHq(wb, fname) {
       if (typeof c === 'number' && stores[c] && [4, 5, 6, 7].every((k) => typeof r[k] === 'number') && r[6] > 0) stores[c].ladder = [r[4], r[5], r[6], r[7]];
     });
   }
-  let ym = null;
+  // 年月の候補：店舗シートのE1/G1、ファイル名（「2026.10」「2611」など）。日割りの日数と1日の曜日に合う月を選ぶ
+  const cands = [];
   for (const n of wb.SheetNames) {
     const sh = wb.Sheets[n], e = sh['E1'] && sh['E1'].v, g = sh['G1'] && sh['G1'].v;
-    if (typeof e === 'number' && e > 2000 && typeof g === 'number' && g >= 1 && g <= 12) { ym = e + String(g).padStart(2, '0'); break; }
+    if (typeof e === 'number' && e > 2000 && typeof g === 'number' && g >= 1 && g <= 12) { cands.push(e + String(g).padStart(2, '0')); break; }
   }
   const fn = fname || '';
   const m1 = fn.match(/(20\d{2})\D(\d{1,2})(?:\D|$)/), m2 = fn.match(/(?:^|\D)(\d{2})(\d{2})(?:\D|$)/);
-  if (!ym && m1 && +m1[2] >= 1 && +m1[2] <= 12) ym = m1[1] + m1[2].padStart(2, '0');
-  if (!ym && m2 && +m2[2] >= 1 && +m2[2] <= 12) ym = '20' + m2[1] + m2[2];
+  if (m1 && +m1[2] >= 1 && +m1[2] <= 12) cands.push(m1[1] + m1[2].padStart(2, '0'));
+  if (m2 && +m2[2] >= 1 && +m2[2] <= 12) cands.push('20' + m2[1] + m2[2]);
+  const W = ['日', '月', '火', '水', '木', '金', '土'];
+  const fits = (c) => { const y = +c.slice(0, 4), m = +c.slice(4); return new Date(y, m, 0).getDate() === days.length && W[new Date(y, m - 1, 1).getDay()] === days[0][1]; };
+  let ym = cands.find(fits) || null;
+  if (!ym) { // 候補が合わないときは、前後1年の中から日数と曜日が合う月を探す（今に近い月）
+    const base = cands.length ? +cands[0].slice(0, 4) : new Date().getFullYear(), now = new Date();
+    const all = [];
+    for (let y = base - 1; y <= base + 1; y++) for (let m = 1; m <= 12; m++) { const c = y + String(m).padStart(2, '0'); if (fits(c)) all.push(c); }
+    all.sort((a, b) => Math.abs(new Date(+a.slice(0, 4), +a.slice(4) - 1) - now) - Math.abs(new Date(+b.slice(0, 4), +b.slice(4) - 1) - now));
+    ym = all[0] || cands[0] || null;
+  }
   return {days, stores, ym};
 }
 async function handle(files) {
@@ -484,6 +520,7 @@ function ymLabel(ym) { return ym ? `${ym.slice(0, 4)}年${+ym.slice(4)}月` : ''
 function codesShown() { return BLOCK.filter((c) => state.stores && state.stores[c]); }
 function lastDayOf(rec) { let m = 0; BLOCK.forEach((c) => { const a = rec.act && rec.act[c]; if (a) Object.keys(a).forEach((d) => { if (a[d][1] > 0) m = Math.max(m, +d); }); }); return m; }
 function renderStatus() {
+  $('#blockLabel').textContent = blockName();
   const hq = $('#stHq'), cs = $('#stCsv'), rec = state;
   const lads = codesShown().filter((c) => rec.stores[c].ladder).length;
   hq.className = 'st ' + (rec.days ? 'ok' : 'ng');
@@ -510,6 +547,9 @@ function renderData() {
     if (db.cur === ym) { db.cur = months().slice(-1)[0]; state = db.history[db.cur]; }
     save(); render(); $('#dataBox').open = true;
   });
+  const bs = $('#blockSel');
+  if (!bs.options.length) bs.innerHTML = Object.entries(BLOCKS).map(([id, b]) => `<option value="${id}">${esc(b.name)}</option>`).join('');
+  bs.value = blockId;
   const fs = $('#fyStart');
   if (!fs.options.length) fs.innerHTML = Array.from({length: 12}, (_, i) => `<option value="${i + 1}">${i + 1}月</option>`).join('');
   fs.value = db.fyStart;
@@ -526,7 +566,7 @@ function renderTabs() {
 function pill(r) { return r == null ? '<td class="na">—</td>' : `<td><span class="pill ${tone(r)}">${pct(r)}</span></td>`; }
 function renderAll() {
   const codes = codesShown();
-  if (!codes.length) return '<div class="panel empty">井村ブロックの店舗がExcelに見つかりません。</div>';
+  if (!codes.length) return `<div class="panel empty">${esc(blockName())}の店舗がExcelに見つかりません。</div>`;
   let rows = '', heat = '';
   let tot = {S: 0, B: 0, H: 0, P: 0};
   codes.forEach((c) => {
@@ -661,7 +701,7 @@ function repHead(title) {
   const ym = ymLabel(state.ym || state.ymHq) || '';
   const ld = lastActualDay();
   const d = new Date();
-  return `<div class="rep-h"><div><p class="sub">鶴橋風月 井村ブロック ・ ${esc(ym)}${ld ? `（${ld}日までの実績）` : ''}</p><h1>${esc(title)}</h1></div><p class="sub">人時売上予算比分析 ・ 作成 ${d.getMonth() + 1}/${d.getDate()}</p></div>`;
+  return `<div class="rep-h"><div><p class="sub">鶴橋風月 ${esc(blockName())} ・ ${esc(ym)}${ld ? `（${ld}日までの実績）` : ''}</p><h1>${esc(title)}</h1></div><p class="sub">人時売上予算比分析 ・ 作成 ${d.getMonth() + 1}/${d.getDate()}</p></div>`;
 }
 function renderPdfBar() {
   const sel = $('#pdfTarget'); const cur = sel.value;
@@ -701,7 +741,7 @@ async function makePdf() {
       pdf.addImage(cv.toDataURL('image/jpeg', 0.9), 'JPEG', (210 - w) / 2, 5, w, h);
     }
     const ym = (ymLabel(state.ym || state.ymHq) || '').replace(/\s/g, '');
-    const nm = sel === 'trend' ? `人時売上予算比_${fyLabel(trendFy || fyOf(state.ym))}_推移.pdf` : isRep ? `井村ブロック_${ym}_人時売上予算比.pdf` : `人時売上予算比_${ym}_${sel === 'all' ? 'ブロック全体' : shortName(state.stores[sel].name)}.pdf`;
+    const nm = sel === 'trend' ? `人時売上予算比_${fyLabel(trendFy || fyOf(state.ym))}_推移.pdf` : isRep ? `${blockName()}_${ym}_人時売上予算比.pdf` : `人時売上予算比_${ym}_${sel === 'all' ? 'ブロック全体' : shortName(state.stores[sel].name)}.pdf`;
     const blob = pdf.output('blob');
     lastPdf = new File([blob], nm, {type: 'application/pdf'});
     pdf.save(nm);
@@ -735,7 +775,7 @@ function moneyTxt(c, D, hd) { const w = D.S[c].wage; return w ? pm(hd) + yen(hd 
 function dptTxt(now, prev) { if (prev == null || now == null) return '<span class="mu">—</span>'; const d = (now - prev) * 100; return `<span class="${d >= 0.05 ? 'ok' : d <= -0.05 ? 'bad' : 'mu'}">${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(1)}pt</span>`; }
 function repTop(D, title) {
   const ym = D.rec.ym, m = +ym.slice(4), d = new Date();
-  return `<div class="rp-top"><div><div class="eb">鶴橋風月 井村ブロック ・ ${ymLabel(ym)} 人時売上予算比レポート</div><h1>${esc(title)}</h1></div><div class="r">${ymLabel(ym)}1日〜${D.ld}日<br>作成 ${d.getMonth() + 1}/${d.getDate()}</div></div>`;
+  return `<div class="rp-top"><div><div class="eb">鶴橋風月 ${esc(blockName())} ・ ${ymLabel(ym)} 人時売上予算比レポート</div><h1>${esc(title)}</h1></div><div class="r">${ymLabel(ym)}1日〜${D.ld}日<br>作成 ${d.getMonth() + 1}/${d.getDate()}</div></div>`;
 }
 const repFoot = (p) => `<div class="rp-foot"><span>人時予算＝その日の売上を月ペースに換算して当月指標の式で算出。金額＝時間差×平均時給（日報の人件費欄）。8h勤務で人数換算。</span><span>${p}</span></div>`;
 function dowAgg(rows) { return DOWS.map((w) => agg(rows.filter((r) => r.dow === w), true)); }
@@ -848,7 +888,7 @@ function lineText(rec) {
   const D = repData(rec); if (!D || !D.blk) return null;
   const {S, lc, blk} = D, M = +rec.ym.slice(4), full = D.ld >= rec.days.length;
   const nr = db.history[ymShift(rec.ym, 1)], NM = nr && nr.days ? +nr.ym.slice(4) : null;
-  const L = [`【井村ブロック ${M}月 人時売上予算比${full ? '' : `（${D.ld}日まで）`}】`, `ブロック（指標対象${lc.length}店）：${pct(blk.ratio)}（適正より${sg(blk.hd)}h）`, ''];
+  const L = [`【${blockName()} ${M}月 人時売上予算比${full ? '' : `（${D.ld}日まで）`}】`, `ブロック（指標対象${lc.length}店）：${pct(blk.ratio)}（適正より${sg(blk.hd)}h）`, ''];
   lc.forEach((c) => L.push(`${S[c].name}　${pct(S[c].a.ratio)}（${sg(S[c].a.hd)}h）`));
   D.codes.filter((c) => !S[c].lad && S[c].a.srate != null).forEach((c) => L.push(`※${S[c].name}は指標対象外（売上予算比 ${pct(S[c].a.srate)}）`));
   const weLow = lc.filter((c) => { const we = agg(S[c].rows.filter((r) => isWE(r.dow)), true), wd = agg(S[c].rows.filter((r) => !isWE(r.dow)), true); return we.ratio != null && wd.ratio != null && we.ratio < wd.ratio; });
@@ -906,7 +946,8 @@ function renderLineBar() {
 }
 
 /* ---------- 推移 ---------- */
-const SCOL = {213: '#1e3a6e', 214: '#d9822b', 223: '#0f8b8d', 224: '#2b6be0', 807: '#8e44ad', 405: '#7a8597'};
+const PAL = ['#1e3a6e', '#d9822b', '#0f8b8d', '#2b6be0', '#8e44ad', '#7a8597', '#b03a48'];
+const scol = (c) => (c === 405 ? '#7a8597' : PAL[Math.max(0, BLOCK.indexOf(c)) % PAL.length]);
 function fyOf(ym) { const y = +ym.slice(0, 4), m = +ym.slice(4); return m >= db.fyStart ? y : y - 1; }
 function fyMonths(fy) { return Array.from({length: 12}, (_, i) => { let m = db.fyStart + i, y = fy; if (m > 12) { m -= 12; y++; } return '' + y + String(m).padStart(2, '0'); }); }
 function fyLabel(fy) { return db.fyStart === 1 ? `${fy}年` : `${fy}年度`; }
@@ -940,8 +981,8 @@ function trendChart(fy, codes, W, lit) {
   codes.forEach((c, k) => {
     const p = pts[k]; let d = '';
     p.forEach((v, i) => { if (v == null) return; d += (d && p[i - 1] != null ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); });
-    if (d) s += `<path d="${d}" fill="none" stroke="${SCOL[c]}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
-    p.forEach((v, i) => { if (v != null) s += `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="${SCOL[c]}"/>`; });
+    if (d) s += `<path d="${d}" fill="none" stroke="${scol(c)}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    p.forEach((v, i) => { if (v != null) s += `<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="${scol(c)}"/>`; });
   });
   return s + '</svg>';
 }
@@ -964,7 +1005,7 @@ function renderTrend(pdf) {
     return `<td>${f0(a.mh)}<small style="display:block;font-size:.72rem;color:var(--muted)">${a.tgt ? '予算 ' + f0(a.tgt) : '指標対象外'}</small>${part}</td>`;
   };
   const table = (kind, list, blockLabel) => {
-    let b = list.map((c) => { const row = ms.map((ym) => mAgg(ym, c)); return `<tr><td><i style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;background:${SCOL[c]}"></i>${esc(nm(c))}</td>${row.map((a) => cell(a, kind)).join('')}${cell(sumAgg(row), kind)}</tr>`; }).join('');
+    let b = list.map((c) => { const row = ms.map((ym) => mAgg(ym, c)); return `<tr><td><i style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;background:${scol(c)}"></i>${esc(nm(c))}</td>${row.map((a) => cell(a, kind)).join('')}${cell(sumAgg(row), kind)}</tr>`; }).join('');
     if (blockLabel) { const row = ms.map((ym) => sumAgg(list.map((c) => mAgg(ym, c)))); b += `<tr class="tot"><td>${blockLabel}</td>${row.map((a) => cell(a, kind)).join('')}${cell(sumAgg(row), kind)}</tr>`; }
     return `<div class="tblbox"><table><thead>${head}</thead><tbody>${b}</tbody></table></div>`;
   };
@@ -973,13 +1014,13 @@ function renderTrend(pdf) {
   <div class="panel" ${pdf ? '' : 'style="margin-top:12px"'}>
     <h2>人時予算比の推移（${fyLabel(fy)}）</h2>
     <p class="note">月ごとの「実績人時 ÷ 日別人時予算の積み上げ」。点線が100%。月の途中のデータは日報がある日までで計算しています。</p>
-    <div class="legend">${lc.map((c) => `<span><i style="background:${SCOL[c]}"></i>${esc(nm(c))}</span>`).join('')}</div>
+    <div class="legend">${lc.map((c) => `<span><i style="background:${scol(c)}"></i>${esc(nm(c))}</span>`).join('')}</div>
     <div class="chart" id="trendChart">${pdf ? trendChart(fy, lc, 718, true) : ''}</div>
   </div>
   <div class="panel" style="margin-top:16px">
     <h2>人時予算比 月別</h2>
     <p class="note">上段＝人時予算比、下段＝時間差（実績 − 適正、h）。緑＝100%以上、黄＝95〜99%、赤＝95%未満。</p>
-    ${table('ratio', lc, '井村ブロック（指標対象店）')}
+    ${table('ratio', lc, blockName() + '（指標対象店）')}
   </div>
   <div class="panel" style="margin-top:16px">
     <h2>人時売上 実績と人時予算 月別（円）</h2>
@@ -988,7 +1029,7 @@ function renderTrend(pdf) {
   <div class="panel" style="margin-top:16px">
     <h2>売上予算比 月別</h2>
     <p class="note">上段＝売上予算比、下段＝売上実績（千円）。</p>
-    ${table('srate', codes, '井村ブロック合計')}
+    ${table('srate', codes, blockName() + '合計')}
   </div>`;
 }
 function render() {
@@ -1021,7 +1062,7 @@ let user = null, uref = null, online = false, ready = false, syncErr = '', retry
 function savePending() { try { localStorage.setItem(PKEY, JSON.stringify([...pending])); } catch (e) {} }
 function markDirty(k) { if (!syncable) return; pending.add(k); savePending(); }
 function hasData(r) { return r && (r.days || Object.keys(r.act || {}).length); }
-function settingsObj() { return {fyStart: db.fyStart || 4, cap: capOn()}; }
+function settingsObj() { return {fyStart: db.fyStart || 4, cap: capOn(), block: blockId}; }
 function pushNow() {
   if (!user || !uref || !ready) { renderAcct(); return; }
   pending.forEach((k) => {
@@ -1052,11 +1093,13 @@ async function startSync(u) {
   try {
     uref = firebase.database().ref('users/' + u.uid + '/jinji');
     let flag = null; try { flag = localStorage.getItem(KEY + '-uid'); } catch (e) {}
-    if (flag !== u.uid) { // この端末で初めてのログイン：端末にだけある月をクラウドへ上げる
+    let needPick = false;
+    if (flag !== u.uid) { // この端末で初めてのログイン
       const [hs, ss] = await Promise.all([uref.child('history').get(), uref.child('settings').get()]);
       const remote = hs.val() || {};
-      months().forEach((ym) => { if (!remote[ym] && hasData(db.history[ym])) pending.add(ym); });
-      if (!ss.exists()) pending.add('_settings');
+      if (!flag) months().forEach((ym) => { if (!remote[ym] && hasData(db.history[ym])) pending.add(ym); }); // 端末にだけある月をクラウドへ
+      else { pending = new Set(); db.history = {[thisYm()]: blank(thisYm())}; db.cur = thisYm(); state = db.history[db.cur]; } // 別の人が使っていた端末：その人のデータは上げない
+      needPick = !ss.exists();
       savePending(); try { localStorage.setItem(KEY + '-uid', u.uid); } catch (e) {}
     }
     if (user !== u) return;
@@ -1065,10 +1108,12 @@ async function startSync(u) {
     uref.child('settings').on('value', (snap) => {
       const v = snap.val(); if (!v || pending.has('_settings')) return;
       db.fyStart = v.fyStart || 4; trendFy = null;
+      if (v.block && BLOCKS[v.block] && v.block !== blockId) { blockId = v.block; BLOCK = BLOCKS[v.block].codes.slice(); try { localStorage.setItem('jinji-navi-v2-block', v.block); } catch (e) {} }
       try { localStorage.setItem(KEY + '-cap', v.cap ? '1' : '0'); } catch (e) {}
       $('#cap').checked = !!v.cap; saveLocal(); render();
     });
     pushNow();
+    if (needPick) openBlockPick();
   } catch (e) {
     syncErr = '通信できません。つながったら自動で同期します'; renderAcct();
     retryT = setTimeout(() => { if (user === u && !ready) startSync(u); }, 15000);
@@ -1083,9 +1128,21 @@ function renderAcct() {
   const n = pending.size;
   const [cls, txt] = syncErr ? ['err', syncErr] : !ready ? ['wait', '同期の準備中…'] : !online ? ['wait', 'オフライン（つながったら同期します）'] : n ? ['wait', `送信中…（${n}件）`] : ['ok', 'クラウドと同期済み'];
   el.innerHTML = `<span title="${esc(user.email || '')}"><i class="sdot ${cls}"></i>${esc(txt)}</span><button type="button" class="linkbtn" id="logoutBtn">ログアウト</button>`;
-  $('#logoutBtn').onclick = () => { if (pending.size && !confirmLogout()) return; firebase.auth().signOut(); };
+  $('#logoutBtn').onclick = () => { if (pending.size && !confirmLogout()) return; firebase.auth().signOut().then(clearLocal); };
 }
 let logoutArmed = false;
+function clearLocal() { // ログアウトしたら端末の中のコピーを消す（データはクラウドに残る）
+  pending = new Set(); savePending();
+  try { localStorage.removeItem(KEY + '-uid'); } catch (e) {}
+  db = {history: {[thisYm()]: blank(thisYm())}, cur: thisYm(), fyStart: db.fyStart || 4}; state = db.history[db.cur];
+  saveLocal(); render();
+}
+function openBlockPick() {
+  const box = $('#blockPick');
+  box.innerHTML = Object.entries(BLOCKS).map(([id, b]) => `<button type="button" class="btn ghost" data-blk="${id}" style="text-align:left">${esc(b.name)}<br><span class="note">${b.codes.length}店舗</span></button>`).join('');
+  box.querySelectorAll('[data-blk]').forEach((b) => b.onclick = () => { setBlock(b.dataset.blk, true); $('#blockDlg').close(); });
+  $('#blockDlg').showModal();
+}
 function confirmLogout() { if (logoutArmed) return true; logoutArmed = true; syncErr = 'まだ送信していないデータがあります。もう一度押すとログアウトします'; renderAcct(); setTimeout(() => { logoutArmed = false; if (syncErr.startsWith('まだ送信')) { syncErr = ''; renderAcct(); } }, 5000); return false; }
 function openLogin() { $('#lgMsg').textContent = ''; $('#loginDlg').showModal(); setTimeout(() => $('#lgEmail').focus(), 50); }
 const AUTH_MSG = {'auth/invalid-credential': 'メールアドレスかパスワードが違います', 'auth/wrong-password': 'メールアドレスかパスワードが違います', 'auth/user-not-found': 'メールアドレスかパスワードが違います', 'auth/invalid-email': 'メールアドレスの形が正しくありません', 'auth/too-many-requests': '何度も失敗したため、しばらく待ってからもう一度試してください', 'auth/network-request-failed': '通信できませんでした。電波のよい所でもう一度試してください'};
@@ -1116,6 +1173,7 @@ document.addEventListener('dragover', (ev) => ev.preventDefault());
 document.addEventListener('drop', (ev) => { ev.preventDefault(); if (!drop.contains(ev.target)) handle([...ev.dataTransfer.files]); });
 $('#file').addEventListener('change', (ev) => { handle([...ev.target.files]); ev.target.value = ''; });
 $('#month').addEventListener('change', (ev) => { db.cur = ev.target.value; state = db.history[db.cur]; save(); render(); });
+$('#blockSel').addEventListener('change', (ev) => setBlock(ev.target.value, true));
 $('#fyStart').addEventListener('change', (ev) => { db.fyStart = +ev.target.value; trendFy = null; markDirty('_settings'); save(); render(); });
 $('#backupBtn').addEventListener('click', backup);
 $('#cap').checked = capOn();

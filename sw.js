@@ -1,4 +1,4 @@
-const CACHE = 'jinji-yosanhi-v9';
+const CACHE = 'jinji-yosanhi-v10';
 const FILES = ['./', './index.html', './xlsx.full.min.js', './html2canvas.min.js', './jspdf.umd.min.js', './firebase-app-compat.js', './firebase-auth-compat.js', './firebase-database-compat.js', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable.png', './apple-touch-icon.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))))); self.clients.claim(); });
